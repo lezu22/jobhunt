@@ -1,0 +1,22 @@
+# Personal data — never commit. The app recreates all of these on first run.
+backend/data/
+backend/config/search_config.json
+backend/config/urls.json
+backend/config/last_results.json
+backend/config/scrape_checkpoint.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
