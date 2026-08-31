@@ -165,7 +165,7 @@ re-runs the full backend suite, not just its own tests.
 
 | # | PR | Contains | Depends on | Check (run yourself) | Status |
 |---|----|----------|------------|----------------------|--------|
-| 1 | `stories-schema` | `stories/migrate.py`, tables + indexes, wired into lifespan; migration tests | — | `python3 -m stories.migrate up/down` against a copy of `backend/data/jobhunt.db`; up→down→up leaves schema identical, `tracked_jobs` intact | not started |
+| 1 | `stories-schema` | `stories/migrate.py`, tables + indexes, wired into lifespan; migration tests | — | `python3 -m stories.migrate up/down` against a copy of `backend/data/jobhunt.db`; up→down→up leaves schema identical, `tracked_jobs` intact | awaiting my review |
 | 2 | `stories-crud` | `stories/db.py`, `models.py`, `router.py`; category/story/label/job-link CRUD, reorder, revert, bulk-delete; seeded-data tests incl. delete-category-moves-stories, delete-story-removes-mappings, delete-job-unlinks-stories | 1 | curl script + pytest output pasted in PR | not started |
 | 3 | `stories-index` | `/stories` route, sidebar entry, read-only index: category sections (uncategorised always last), expand/collapse cards, category+story reorder | 2 | run app, view seeded data, reorder persists across reload | not started |
 | 4 | `stories-editor` | story/note view page: rendered markdown (react-markdown+remark-gfm), edit mode with sessionStorage draft buffer keyed by story id, dirty indicator, discard confirm, immediate metadata chip commits (visually separated from the draft-buffered body), save→previous_body, revert-to-previous | 3 | refresh mid-edit keeps draft; save/cancel clears it; chip change survives cancel; revert works | not started |
@@ -208,17 +208,26 @@ anything that could not be executed.
 - **D6** NDA flag is a marker/badge only — no redaction behaviour anywhere.
 - **D7** Raw HTML in markdown is rendered as inert text (no `rehype-raw`),
   which satisfies "no raw HTML or script through" without a sanitiser pass.
+- **D8** (step 1) `stories.category_id` carries `ON DELETE SET NULL` as a
+  schema-level backstop; the category-delete endpoint still moves stories to
+  uncategorised explicitly. `question_mappings.score` is
+  `CHECK (score IS NULL OR score BETWEEN 0 AND 5)`. Category and label names
+  are `COLLATE NOCASE UNIQUE` at the schema level, so the case-insensitive
+  duplicate block holds even outside the API.
+- **D9** (step 1) The live DB picked up the migration at first app start after
+  the lifespan wiring — expected and harmless (`up` is idempotent and purely
+  additive; `tracked_jobs` untouched, 16 rows before and after,
+  `PRAGMA integrity_check` ok).
 
 ## Open questions
 
-- **Q1 (blocking step 8)** Search mechanism — recommendation made, awaiting
-  confirmation: SQLite FTS5, `porter unicode61` tokenizer, `bm25()` column
-  weights (question > title > body), external-content table synced by
-  triggers. Verified working on this machine's SQLite 3.37.2, including the
-  "pushed back" → "push back on scope" stem match. Costs/trade-offs in the
-  PR-plan discussion. Alternatives considered: Postgres tsvector (would
-  introduce a whole new DB engine to a sqlite3 project), LIKE (excluded by
-  spec).
+- **Q1 — RESOLVED 2026-08-31**: search mechanism confirmed by Lucas as SQLite
+  FTS5 (`porter unicode61` tokenizer, `bm25()` column weights
+  question > title > body, external-content table synced by triggers).
+  Verified working on this machine's SQLite 3.37.2, including the
+  "pushed back" → "push back on scope" stem match. Alternatives considered:
+  Postgres tsvector (would introduce a whole new DB engine to a sqlite3
+  project), LIKE (excluded by spec).
 - **Q2** "Near-identical" title matching for import duplicate flagging is
   defined as D5's normalised comparison — flag if you want fuzzier matching
   (e.g. edit distance).
