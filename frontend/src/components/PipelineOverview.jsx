@@ -1,15 +1,17 @@
 import { useMemo, useState } from 'react'
 import { sankey, sankeyLinkHorizontal, sankeyJustify } from 'd3-sankey'
 import { Card, SectionTitle } from './UI.jsx'
-import { BASE_STAGES, STAGE_INFO } from './StatusPipeline.jsx'
+import { BASE_STAGES, STAGE_INFO, stageColorFor } from './StatusPipeline.jsx'
 
-const OUTCOME_COLOR = {
-  Hired: 'var(--accent)',
-  Rejected: '#f87171',
-  Withdrawn: 'var(--text3)',
-  'Still Active': 'var(--accent3)',
+// Node colours come from the shared per-stage palette so the diagram matches
+// the card accents exactly. Only the two non-stage nodes get their own colour.
+const TERMINAL_NODES = new Set(['Hired', 'Rejected', 'Withdrawn', 'Still Active'])
+
+function nodeColor(name) {
+  if (name === 'Still Active') return 'var(--accent3)'  // not a stage: amber "in flight"
+  if (name === 'Not Applied') return stageColorFor('none') // entry node: same grey as the cards
+  return stageColorFor(name)
 }
-const FLOW_COLOR = 'var(--accent)' // stage-to-stage links: same neutral accent as the rest of the app
 
 const VB_W = 960
 const VB_H = 360
@@ -26,19 +28,19 @@ function aggregateStages(jobs) {
   return [...BASE_STAGES.slice(0, idx + 1), ...roundStages, ...BASE_STAGES.slice(idx + 1)]
 }
 
-// Traces each job's actual path — Tracked -> every stage it reached, in order -> wherever it exited
+// Traces each job's actual path — Not Applied -> every stage it reached, in order -> wherever it exited
 // (Hired / Rejected / Withdrawn / Still Active) — and tallies how many jobs walked each edge. This is
 // what makes the branch points real: a job rejected right after "Applied" contributes a
 // Applied -> Rejected edge, not a generic share of the final node.
 function buildSankeyData(jobs) {
   const stages = aggregateStages(jobs)
-  const canonicalOrder = ['Tracked', ...stages, 'Hired', 'Still Active', 'Withdrawn', 'Rejected']
+  const canonicalOrder = ['Not Applied', ...stages, 'Hired', 'Still Active', 'Withdrawn', 'Rejected']
 
   const linkWeights = {}
   jobs.forEach(job => {
     let lastIdx = -1
     stages.forEach((s, i) => { if (job.stages?.[s]) lastIdx = i })
-    const path = ['Tracked', ...stages.slice(0, lastIdx + 1)]
+    const path = ['Not Applied', ...stages.slice(0, lastIdx + 1)]
     const exit = job.status === 'hired' ? 'Hired'
       : job.status === 'rejected' ? 'Rejected'
       : job.status === 'withdrawn' ? 'Withdrawn'
@@ -93,7 +95,10 @@ export default function PipelineOverview({ jobs }) {
         <svg viewBox={`0 0 ${VB_W} ${VB_H}`} style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible' }}>
           {/* Links */}
           {graph.links.map((l, i) => {
-            const color = OUTCOME_COLOR[l.targetName] || FLOW_COLOR
+            // Links into an outcome take its colour (a red rejected branch is
+            // informative); stage-to-stage flow carries its source stage colour
+            // so the diagram sweeps through the same progression as the cards.
+            const color = TERMINAL_NODES.has(l.targetName) ? nodeColor(l.targetName) : nodeColor(l.source.name)
             const dim = hoveredNode && l.source.name !== hoveredNode && l.target.name !== hoveredNode
             return (
               <path
@@ -110,8 +115,7 @@ export default function PipelineOverview({ jobs }) {
 
           {/* Nodes */}
           {graph.nodes.map((n, i) => {
-            const color = OUTCOME_COLOR[n.name] || FLOW_COLOR
-            const isTerminal = !!OUTCOME_COLOR[n.name]
+            const color = nodeColor(n.name)
             const labelRight = n.x0 > VB_W - 220 // terminal column: label to the right, horizontal
             return (
               <g

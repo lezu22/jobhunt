@@ -58,3 +58,73 @@ input, select, textarea { font-family: var(--mono); }
 .fade-up { animation: fadeUp 0.25s ease forwards; }
 .spin { animation: spin 1s linear infinite; }
 .pulse { animation: pulse 2s ease-in-out infinite; }
+
+/* ── Edit-mode border glow ──────────────────────────────────────────────────
+   A thin light that travels around the card border while editing. The ring is
+   drawn by a conic-gradient pseudo-element masked down to a 2px border band;
+   --glow-color is set inline per card to match its stage accent. */
+@property --edit-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes editGlowSpin {
+  to { --edit-angle: 360deg; }
+}
+
+.edit-glow {
+  position: relative;
+}
+
+.edit-glow::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+  padding: 4px;
+  background: conic-gradient(
+    from var(--edit-angle),
+    transparent 0%,
+    transparent 72%,
+    var(--glow-color, var(--accent)) 90%,
+    transparent 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  animation: editGlowSpin 5s linear infinite;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ── Closed-out applications (rejected / withdrawn) ─────────────────────────
+   Muted so they recede behind active cards, WITHOUT losing legibility: the
+   palette is overridden locally (rather than blanket-dimmed with opacity), so
+   every text tone keeps at least the contrast it had on an active card —
+   --text3 actually gains contrast. The saturate() filter on children is
+   luminance-preserving, so it drains colour from hardcoded accents (badges,
+   round stripes) without darkening any text.
+   The card's left-edge accent bar is the root's own border, so neither the
+   filter nor these variables touch it — it stays the one full-colour marker. */
+.card-closed {
+  --surface:  #0c0c12;
+  --surface2: #121218;
+  --surface3: #17171e;
+  --border:   #20202a;
+  --border2:  #282833;
+  --text:     #a9a9b6;  /* ~8.4:1 on the muted card background */
+  --text2:    #85858f;  /* ~5.3:1 */
+  --text3:    #63636e;  /* ~3.0:1 — brighter than the 2.1:1 of an active card */
+  --accent:   #8f9a95;
+  --accent2:  #8c8c99;
+  --accent3:  #9a958a;
+  --accent-dim: rgba(255, 255, 255, 0.05);
+  --danger:   #ab7777;  /* ~5.2:1 — Remove button text is small+bold, so it needs full AA */
+}
+
+/* Children only — the root paints the left accent bar, so it is unaffected. */
+.card-closed > * {
+  filter: saturate(0.3);
+}
