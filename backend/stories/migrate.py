@@ -121,6 +121,23 @@ def migrate(db_path: Path | str = DEFAULT_DB) -> None:
         conn.close()
 
 
+def print_status(conn: sqlite3.Connection, db: Path) -> None:
+    present = applied_tables(conn)
+    missing = sorted(set(STORY_TABLES) - set(present))
+    try:
+        jobs = conn.execute("SELECT COUNT(*) FROM tracked_jobs").fetchone()[0]
+        print(f"db: {db}  |  tracked_jobs rows: {jobs} (never touched by this migration)")
+    except sqlite3.OperationalError:
+        print(f"db: {db}  |  no tracked_jobs table (not a jobhunt DB?)")
+    if not present:
+        print("stories migration: NOT APPLIED (no stories tables)")
+        return
+    print(f"stories migration: {'APPLIED' if not missing else 'PARTIAL — missing ' + str(missing)}")
+    for table in sorted(present):
+        count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        print(f"  {table}: {count} rows")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["up", "down", "status"])
@@ -135,11 +152,7 @@ def main() -> None:
         elif args.action == "down":
             down(conn)
             print(f"down OK: {args.db}")
-        present = applied_tables(conn)
-        missing = sorted(set(STORY_TABLES) - set(present))
-        print(f"stories tables present: {present or 'none'}")
-        if missing and args.action != "down":
-            print(f"missing: {missing}")
+        print_status(conn, args.db)
     finally:
         conn.close()
 
