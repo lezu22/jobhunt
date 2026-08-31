@@ -12,9 +12,13 @@ CLI (from backend/):
 
 import argparse
 import sqlite3
+import sys
 from pathlib import Path
 
-DEFAULT_DB = Path(__file__).resolve().parents[1] / "data" / "jobhunt.db"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import database
+
+DEFAULT_DB = database.DB_PATH  # honours the JOBHUNT_DB env override
 
 # Drop order: children before parents.
 STORY_TABLES = [

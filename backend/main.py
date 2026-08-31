@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import database
 from stories import migrate as stories_migrate
+from stories.router import router as stories_router
 from scraper.base import job_id
 from scraper.filters import job_matches_exclusions, listing_keys
 from scraper.runner import run_search
@@ -72,6 +73,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"], allow_headers=["*"],
 )
+app.include_router(stories_router)
 
 
 # ─── Config ──────────────────────────────────────────────────────────────────

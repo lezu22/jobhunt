@@ -165,8 +165,8 @@ re-runs the full backend suite, not just its own tests.
 
 | # | PR | Contains | Depends on | Check (run yourself) | Your action | Status |
 |---|----|----------|------------|----------------------|-------------|--------|
-| 1 | `stories-schema` | `stories/migrate.py`, tables + indexes, wired into lifespan; migration tests | — | `python3 -m stories.migrate up/down` against a copy of `backend/data/jobhunt.db`; up→down→up leaves schema identical, `tracked_jobs` intact | review schema in `stories/migrate.py` + migration tests; optionally run the up/down check and the suite; reply "go ahead with step 2" | awaiting my review |
-| 2 | `stories-crud` | `stories/db.py`, `models.py`, `router.py`; category/story/label/job-link CRUD, reorder, revert, bulk-delete; seeded-data tests incl. delete-category-moves-stories, delete-story-removes-mappings, delete-job-unlinks-stories | 1 | curl script + pytest output pasted in PR | review endpoint shapes against the plan; optionally replay the pasted curl script; reply "go ahead with step 3" | not started |
+| 1 | `stories-schema` | `stories/migrate.py`, tables + indexes, wired into lifespan; migration tests | — | `python3 -m stories.migrate up/down` against a copy of `backend/data/jobhunt.db`; up→down→up leaves schema identical, `tracked_jobs` intact | review schema in `stories/migrate.py` + migration tests; optionally run the up/down check and the suite; reply "go ahead with step 2" | merged (approved 2026-08-31, incl. richer `status` output added on review feedback) |
+| 2 | `stories-crud` | `stories/db.py`, `models.py`, `router.py`; category/story/label/job-link CRUD, reorder, revert, bulk-delete; seeded-data tests incl. delete-category-moves-stories, delete-story-removes-mappings, delete-job-unlinks-stories | 1 | curl script + pytest output pasted in PR | review endpoint shapes against the plan; optionally replay `bash scripts/stories_crud_demo.sh` (scratch DB, live data untouched); reply "go ahead with step 3" | awaiting my review |
 | 3 | `stories-index` | `/stories` route, sidebar entry, read-only index: category sections (uncategorised always last), expand/collapse cards, category+story reorder | 2 | run app, view seeded data, reorder persists across reload | run the app, eyeball the index against your taste (layout/order/cards), reorder + reload; reply with UI tweaks or "go ahead with step 4" | not started |
 | 4 | `stories-editor` | story/note view page: rendered markdown (react-markdown+remark-gfm), edit mode with sessionStorage draft buffer keyed by story id, dirty indicator, discard confirm, immediate metadata chip commits (visually separated from the draft-buffered body), save→previous_body, revert-to-previous | 3 | refresh mid-edit keeps draft; save/cancel clears it; chip change survives cancel; revert works | exercise the edit flow yourself (draft survives refresh, cancel semantics, chip/body boundary feels clear); reply "go ahead with step 5" | not started |
 | 5 | `stories-delete` | single delete confirm (names title, lists what goes with it); bulk delete: one dialog, per-row checkboxes all checked, count on the action button, visually distinct from export dialog; transactional backend path + rollback test | 4 | delete with rows unchecked removes only checked; forced mid-transaction failure deletes nothing | try single + bulk delete on seeded data, judge the two dialogs are not confusable; reply "go ahead with step 6" | not started |
@@ -218,6 +218,22 @@ anything that could not be executed.
   the lifespan wiring — expected and harmless (`up` is idempotent and purely
   additive; `tracked_jobs` untouched, 16 rows before and after,
   `PRAGMA integrity_check` ok).
+- **D10** (step 2) Labels are pruned automatically once their last story link
+  goes away (on label edit, story delete, bulk delete), so the filter
+  dropdown never accumulates dead tags. There is no persistent label
+  vocabulary beyond current use.
+- **D11** (step 2) Switching a story to `kind: note` while it still has
+  question mappings is a 400 telling you to clear them; sending
+  `{"kind": "note", "mappings": []}` in one PATCH does both. Prevents
+  silently discarding mappings on a metadata chip change.
+- **D12** (step 2) `JOBHUNT_DB` env var points the whole backend (DB layer,
+  migration CLI, server) at an alternate DB file. Used by tests and
+  `scripts/stories_crud_demo.sh` so checks never touch live data.
+- **D13** (workflow, 2026-08-31) Branch/PR flow: `feat/work-stories` is the
+  integration branch on GitHub; step 1 was committed to it directly (before
+  pushing began); each later step is built on its own branch (e.g.
+  `feat/stories-crud`) and lands via a PR into `feat/work-stories`. Nothing
+  is pushed without Lucas asking; final PR merges the whole feature to main.
 
 ## Open questions
 
