@@ -229,14 +229,14 @@ anything that could not be executed.
 - **D12** (step 2) `JOBHUNT_DB` env var points the whole backend (DB layer,
   migration CLI, server) at an alternate DB file. Used by tests and
   `scripts/stories_crud_demo.sh` so checks never touch live data.
-- **D13** (workflow, 2026-08-31) Branch/PR flow: `feat/work-stories` is the
-  integration branch on GitHub; step 1 was committed to it directly (before
-  pushing began), so it has no step PR of its own — it is reviewable in the
-  draft integration PR #6 (`feat/work-stories` → `main`), which grows as step
-  PRs land and becomes the final feature merge. Each step from 2 on is built
-  on its own branch (e.g. `feat/stories-crud`) and lands via a PR into
-  `feat/work-stories` (#5 = step 2). Final merge of #6 only on explicit
-  approval.
+- **D13** (workflow, 2026-08-31, revised on Lucas's review) Single branch,
+  single PR: every step is committed directly to `feat/work-stories`, and
+  draft PR #6 (`feat/work-stories` → `main`) is the one PR for the whole
+  feature. Per-step review happens on #6 via "changes since your last
+  review" after each step's commits are pushed. (Step 2 briefly lived on its
+  own branch as PR #5, merged by fast-forward when this flow was adopted; no
+  further step branches.) #6 merges only on explicit approval, after the
+  dedicated plan-doc-deletion commit.
 
 ## Open questions
 
