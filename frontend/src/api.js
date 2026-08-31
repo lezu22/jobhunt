@@ -41,4 +41,26 @@ export const api = {
 
   // Stats
   getStats: () => req('GET', '/stats'),
+
+  // Work Stories: categories
+  getStoryCategories:    ()         => req('GET',    '/stories/categories'),
+  createStoryCategory:   (name)     => req('POST',   '/stories/categories', { name }),
+  renameStoryCategory:   (id, name) => req('PATCH',  `/stories/categories/${id}`, { name }),
+  deleteStoryCategory:   (id)       => req('DELETE', `/stories/categories/${id}`),
+  reorderStoryCategories:(ids)      => req('PUT',    '/stories/categories/order', { ids }),
+
+  // Work Stories: stories/notes
+  getStories:      (params = {}) => {
+    const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+    const s = q.toString()
+    return req('GET', `/stories${s ? `?${s}` : ''}`)
+  },
+  getStory:        (id)          => req('GET',    `/stories/${id}`),
+  createStory:     (data)        => req('POST',   '/stories', data),
+  updateStory:     (id, data)    => req('PATCH',  `/stories/${id}`, data),
+  revertStory:     (id)          => req('POST',   `/stories/${id}/revert`),
+  deleteStory:     (id)          => req('DELETE', `/stories/${id}`),
+  bulkDeleteStories:(ids)        => req('POST',   '/stories/bulk-delete', { ids }),
+  reorderStories:  (categoryId, ids) => req('PUT', '/stories/order', { category_id: categoryId, ids }),
+  getStoryLabels:  ()            => req('GET',    '/stories/labels'),
 }

@@ -7,6 +7,7 @@ const NAV = [
   { path: '/scrape', label: 'Run Scraper', icon: '▷' },
   { path: '/results', label: 'Results', icon: '◫' },
   { path: '/tracker', label: 'Tracker', icon: '◉' },
+  { path: '/stories', label: 'Work Stories', icon: '❝' },
 ]
 
 export default function Sidebar({ stats }) {
