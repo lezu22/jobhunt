@@ -171,7 +171,7 @@ re-runs the full backend suite, not just its own tests.
 | 4 | `stories-editor` | story/note view page: rendered markdown (react-markdown+remark-gfm), edit mode with sessionStorage draft buffer keyed by story id, dirty indicator, discard confirm, immediate metadata chip commits (visually separated from the draft-buffered body), save→previous_body, revert-to-previous | 3 | refresh mid-edit keeps draft; save/cancel clears it; chip change survives cancel; revert works | not started |
 | 5 | `stories-delete` | single delete confirm (names title, lists what goes with it); bulk delete: one dialog, per-row checkboxes all checked, count on the action button, visually distinct from export dialog; transactional backend path + rollback test | 4 | delete with rows unchecked removes only checked; forced mid-transaction failure deletes nothing | not started |
 | 6 | `stories-import` | parser (H2 category, H3 title, `— Score: N/5` lifting, everything else verbatim incl. Caution lines, metadata-comment strip), upload validation (ext + UTF-8 + 2MB, retry flow), staged review screen: category resolution (create-new / map-to-existing), kind selection (no-mappings ⇒ note default), title edit, merge/split, per-record category, duplicate flagging (id ⇒ update default, title ⇒ create-new default, or skip), counts report | 2 (UI: 4) | import `story-bank.md`, verify counts + Caution lines in bodies; import twice, verify dup flow | not started |
-| 7 | `stories-export` | single + combined export: categories as `##` in user order (uncategorised last, empty categories skipped), titles as `###`, mappings back to `— Score: N/5` form, metadata HTML comment under each `###` (checkbox: default ON full export, OFF selection); round-trip tests | 6 | export-all → re-import → no drift, metadata stripped not duplicated; metadata-off round trip loses only meta fields | not started |
+| 7 | `stories-export` | single + combined export: categories as `##` in user order (uncategorised last, empty categories skipped), titles as `###`, mappings back to `— Score: N/5` form, metadata HTML comment under each `###` (checkbox: default ON full export, OFF selection); export dialog shows the default filename in an editable field for confirm/change before download (Q3); round-trip tests | 6 | export-all → re-import → no drift, metadata stripped not duplicated; metadata-off round trip loses only meta fields | not started |
 | 8 | `stories-search` | search mechanism per Q1 decision (FTS5 proposed), index title/body/question with question weighted highest, ranking = relevance, ties by score desc, question-matches above body-only; result rows show matching question + score; index filters (category/label/job/status/kind) + sorts + job-link UI | 2, 3 | "pushed back" finds the "push back on scope" story; no-result query behaves | not started |
 | 9 | final merge | dedicated commit deleting this doc, then merge `feat/work-stories` → `main` | 1–8 | full verification pass (below) done and reported | not started |
 
@@ -228,8 +228,10 @@ anything that could not be executed.
   "pushed back" → "push back on scope" stem match. Alternatives considered:
   Postgres tsvector (would introduce a whole new DB engine to a sqlite3
   project), LIKE (excluded by spec).
-- **Q2** "Near-identical" title matching for import duplicate flagging is
-  defined as D5's normalised comparison — flag if you want fuzzier matching
-  (e.g. edit distance).
-- **Q3** Export filename convention: proposing `work-stories-YYYY-MM-DD.md`
-  for combined, `<slug-of-title>.md` for single. Confirm or name a preference.
+- **Q2 — RESOLVED 2026-08-31**: D5's normalised comparison (case-folded,
+  whitespace-collapsed, leading list number stripped) confirmed as the
+  duplicate-title match; no fuzzier matching.
+- **Q3 — RESOLVED 2026-08-31**: filename defaults confirmed
+  (`work-stories-YYYY-MM-DD.md` combined, `<slug-of-title>.md` single), with
+  the requirement that the export dialog shows the filename in an editable
+  field so it can be changed/confirmed before the file is produced (step 7).
