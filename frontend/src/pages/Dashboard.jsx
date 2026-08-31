@@ -37,6 +37,7 @@ export default function Dashboard() {
           { label: 'Offers', value: byStatus.offer || 0, color: 'var(--accent)' },
           { label: 'Hired', value: byStatus.hired || 0, color: 'var(--accent)' },
           { label: 'Rejected', value: byStatus.rejected || 0, color: '#f87171' },
+          { label: 'Ghosted', value: byStatus.ghosted || 0, color: '#a8a2c0' },
           { label: 'Withdrawn', value: byStatus.withdrawn || 0, color: 'var(--text3)' },
           { label: 'Not Applied', value: byStatus.none || 0, color: 'var(--text3)' },
         ].map(item => (

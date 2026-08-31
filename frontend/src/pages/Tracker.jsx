@@ -20,6 +20,7 @@ const FILTERS = [
   { value: 'hired',          label: 'Hired' },
   { value: 'rejected',       label: 'Rejected' },
   { value: 'withdrawn',      label: 'Withdrawn' },
+  { value: 'ghosted',        label: 'Ghosted' },
 ]
 
 function jobFilterKey(job) {
@@ -38,6 +39,7 @@ const NEW_STATUS_OPTIONS = [
   { value: 'hired',        label: 'Hired' },
   { value: 'rejected',     label: 'Rejected' },
   { value: 'withdrawn',    label: 'Withdrawn' },
+  { value: 'ghosted',      label: 'Ghosted' },
 ]
 
 const EMPTY_DRAFT = { title: '', company: '', location: '', url: '', salary: '', status: 'none', description: '' }
@@ -50,10 +52,10 @@ const SORT_OPTIONS = [
 ]
 
 // Rank order for stage sorting (furthest-along shown first): the active
-// pipeline ranks highest, while dead applications (rejected/withdrawn) rank
-// below everything so they sink to the bottom of the list. Interview rounds
+// pipeline ranks highest, while dead applications (rejected/withdrawn/ghosted)
+// rank below everything so they sink to the bottom of the list. Interview rounds
 // slot after Interview via fractional ranks (R2 → +.02, R3 → +.03, ...).
-const STAGE_ORDER = ['withdrawn', 'rejected', 'none', 'CV Submitted', 'Applied', 'Discovery Call', 'Interview', 'Offer', 'Negotiation', 'hired']
+const STAGE_ORDER = ['withdrawn', 'ghosted', 'rejected', 'none', 'CV Submitted', 'Applied', 'Discovery Call', 'Interview', 'Offer', 'Negotiation', 'hired']
 
 function stageRank(job) {
   const stage = currentStageOf(job)
