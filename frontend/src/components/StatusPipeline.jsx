@@ -1,17 +1,69 @@
 import { useState } from 'react'
 
-const BASE_STAGES = ['CV Submitted', 'Applied', 'Interview', 'Final Round', 'Offer', 'Negotiation']
+const BASE_STAGES = ['CV Submitted', 'Applied', 'Discovery Call', 'Interview', 'Offer', 'Negotiation']
 
 const STAGE_INFO = {
-  'CV Submitted': 'CV / registration sent, awaiting response — before formally applying',
-  'Applied':      'Application submitted',
-  'Interview':    'Main interview round',
-  'Final Round':  'Final round / onsite',
-  'Offer':        'Offer received',
-  'Negotiation':  'Negotiating offer terms',
+  'CV Submitted':   'CV / registration sent, awaiting response — before formally applying',
+  'Applied':        'Application submitted',
+  'Discovery Call': 'Intro / discovery call with recruiter or hiring manager',
+  'Interview':      'First interview round — add further rounds with "+"',
+  'Offer':          'Offer received',
+  'Negotiation':    'Negotiating offer terms',
 }
 
 const ROUND_RE = /^Interview Round (\d+)$/
+
+// `stages` carries two separate meanings per stage: WHETHER it was reached, and
+// (optionally) the key date the user scheduled for it. Reaching a stage stores
+// this sentinel rather than a date, so advancing a job never invents a key date
+// — dates are only ever written when the user types one into Key Dates.
+const STAGE_REACHED = 'reached'
+const DATE_VALUE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/
+
+// The user-set date for a stage value, or null when it's merely "reached".
+function stageDate(value) {
+  return DATE_VALUE_RE.test(value || '') ? value : null
+}
+
+// Per-stage accent colours — the single source for the card left-edge bar, the
+// edit-mode glow, and the pipeline-overview diagram: a violet → indigo → blue
+// → cyan → teal sweep that converges naturally on the theme's hired green, so
+// a job visibly "warms up" as it advances. Rejected/withdrawn sit outside the
+// progression.
+const STAGE_COLORS = {
+  none:             '#252538', // matches --border: visually "no stage yet"
+  'CV Submitted':   '#8b5cf6', // violet — matches --accent2 family
+  'Applied':        '#6366f1', // indigo
+  'Discovery Call': '#3b82f6', // blue
+  'Interview':      '#0ea5e9', // sky — every interview round shares this
+  'Offer':          '#14b8a6', // teal
+  'Negotiation':    '#10b981', // emerald
+  hired:            '#00e5a0', // the accent green, fully arrived
+  rejected:         '#ef4444',
+  withdrawn:        '#4a4a66',
+}
+
+// Colour for a stage name in either form ("Hired" node labels or "hired"
+// status values); interview rounds share the Interview colour.
+function stageColorFor(stage) {
+  if (ROUND_RE.test(stage)) return STAGE_COLORS['Interview']
+  return STAGE_COLORS[stage] || STAGE_COLORS[String(stage).toLowerCase()] || STAGE_COLORS.none
+}
+
+// Stages that happen at a scheduled time of day, so their date can carry an
+// optional "T HH:MM" component (stored as "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM").
+function stageSupportsTime(stage) {
+  return stage === 'Discovery Call' || stage === 'Interview' || ROUND_RE.test(stage)
+}
+
+// Stages whose date is an event you act on (a call or interview you attend) —
+// these surface in the calendar, upcoming-date chips, and the Key Dates editor.
+// The rest (CV Submitted, Applied, Offer, Negotiation) are historic progression
+// markers stamped when the stage is selected; the actionable deadline that
+// follows an offer is the "Decision Date" extra date, not the Offer stamp.
+function isActionStage(stage) {
+  return stageSupportsTime(stage)
+}
 
 // The next auto-named round for a job that already has `customStages` interview rounds —
 // standardized naming (not free text) so the same round means the same thing across every job,
@@ -29,20 +81,21 @@ const STAGE_TO_STATUS = {
   Negotiation:    'negotiating',
 }
 
-// Custom interview rounds (e.g. "2nd Interview", "Panel Round") slot in right after "Interview" —
-// same place "Final Round" already sits — so companies with more rounds than the default template aren't boxed in.
+// Extra interview rounds slot in right after "Interview" (which is round 1), so the number of
+// rounds is entirely user-driven — there is no fixed "final" round.
 function getEffectiveStages(customStages = []) {
   const idx = BASE_STAGES.indexOf('Interview')
   return [...BASE_STAGES.slice(0, idx + 1), ...customStages, ...BASE_STAGES.slice(idx + 1)]
 }
 
 // Marks `stage` reached and backfills every earlier stage (in `orderedStages`) that isn't reached yet,
-// so progress always reads as continuous instead of skipping steps.
-function markStageReached(orderedStages, stages, stage, date = new Date().toISOString().split('T')[0]) {
+// so progress always reads as continuous instead of skipping steps. Never touches a stage that already
+// has a value, so a user-set key date is preserved.
+function markStageReached(orderedStages, stages, stage, value = STAGE_REACHED) {
   const idx = orderedStages.indexOf(stage)
   const updated = { ...stages }
   for (let i = 0; i <= idx; i++) {
-    if (!updated[orderedStages[i]]) updated[orderedStages[i]] = date
+    if (!updated[orderedStages[i]]) updated[orderedStages[i]] = value
   }
   return updated
 }
@@ -56,25 +109,38 @@ export default function StatusPipeline({ stages = {}, customStages = [], onChang
 
   const toggleStage = (stage) => {
     if (readonly) return
+    const idx = STAGES.indexOf(stage)
     if (stages[stage]) {
-      const updated = { ...stages }
-      delete updated[stage]
-      onChange(updated)
+      if (idx === lastReachedIdx) {
+        // Clicking the current (furthest) stage steps back off it
+        const updated = { ...stages }
+        delete updated[stage]
+        onChange(updated)
+      } else {
+        // Clicking an earlier stage reverts to it: it becomes the current
+        // stage — everything after is cleared, gaps before it are backfilled
+        const kept = {}
+        STAGES.slice(0, idx + 1).forEach(s => { if (stages[s]) kept[s] = stages[s] })
+        onChange(markStageReached(STAGES, kept, stage))
+      }
     } else {
       onChange(markStageReached(STAGES, stages, stage))
     }
   }
 
-  const setDate = (stage, date) => {
-    if (readonly) return
-    const updated = { ...stages }
-    if (date) updated[stage] = date
-    else delete updated[stage]
-    onChange(updated)
-  }
-
   const addStage = () => {
-    onCustomStagesChange([...customStages, nextRoundName(customStages)])
+    const name = nextRoundName(customStages)
+    const newCustom = [...customStages, name]
+    onCustomStagesChange(newCustom)
+
+    // Retroactive insert: if the job is already past where this round sits,
+    // stamp it as passed (using the previous reached stage's date) so the
+    // pipeline stays continuous and the current-stage marker doesn't move.
+    const ordered = getEffectiveStages(newCustom)
+    const idx = ordered.indexOf(name)
+    if (ordered.slice(idx + 1).some(s => stages[s])) {
+      onChange({ ...stages, [name]: STAGE_REACHED })
+    }
   }
 
   const removeStage = (stage) => {
@@ -140,7 +206,11 @@ export default function StatusPipeline({ stages = {}, customStages = [], onChang
                   }}>
                     <div style={{ fontWeight: 700 }}>{stage}{isCustom && ' (custom)'}</div>
                     <div style={{ color: 'var(--text2)', fontSize: 9, marginTop: 2 }}>{STAGE_INFO[stage] || 'Additional interview round'}</div>
-                    {stages[stage] && <div style={{ color: 'var(--accent)', fontSize: 9, marginTop: 2 }}>✓ {stages[stage]}</div>}
+                    {stages[stage] && (
+                      <div style={{ color: 'var(--accent)', fontSize: 9, marginTop: 2 }}>
+                        {stageDate(stages[stage]) ? `✓ ${stages[stage].replace('T', ' · ')}` : '✓ reached — no date set'}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -170,32 +240,8 @@ export default function StatusPipeline({ stages = {}, customStages = [], onChang
         })}
       </div>
 
-      {/* Stage labels + date inputs */}
-      {!readonly && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
-          {STAGES.map(stage => (
-            <div key={stage}>
-              <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                {stage}
-              </div>
-              <input
-                type="date"
-                value={stages[stage] || ''}
-                onChange={e => setDate(stage, e.target.value)}
-                style={{
-                  width: '100%', background: 'var(--surface2)',
-                  border: '1px solid var(--border)', color: 'var(--text)',
-                  padding: '5px 8px', borderRadius: 4,
-                  fontFamily: 'var(--mono)', fontSize: 10,
-                  outline: 'none',
-                }}
-              />
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }
 
-export { BASE_STAGES, STAGE_INFO, STAGE_TO_STATUS, markStageReached, getEffectiveStages, nextRoundName, ROUND_RE }
+export { BASE_STAGES, STAGE_INFO, STAGE_TO_STATUS, STAGE_COLORS, stageColorFor, markStageReached, getEffectiveStages, nextRoundName, ROUND_RE, stageSupportsTime, isActionStage, STAGE_REACHED, stageDate }

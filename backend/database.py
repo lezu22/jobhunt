@@ -4,6 +4,7 @@ Uses a single 'tracked_jobs' table with JSON columns for flexible data.
 """
 
 import json
+import re
 import sqlite3
 import logging
 from datetime import datetime
@@ -13,6 +14,8 @@ from typing import Optional
 log = logging.getLogger(__name__)
 
 DB_PATH = Path(__file__).parent / "data" / "jobhunt.db"
+
+_ROUND_RE = re.compile(r"^Interview Round (\d+)$")
 
 
 def _connect() -> sqlite3.Connection:
@@ -47,6 +50,7 @@ def init_db():
                 research    TEXT DEFAULT '',
                 extra_dates TEXT DEFAULT '{}',
                 custom_stages TEXT DEFAULT '[]',
+                stage_details TEXT DEFAULT '{}',
                 created_at  TEXT,
                 updated_at  TEXT
             )
@@ -54,8 +58,49 @@ def init_db():
         existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(tracked_jobs)")}
         if "custom_stages" not in existing_cols:
             conn.execute("ALTER TABLE tracked_jobs ADD COLUMN custom_stages TEXT DEFAULT '[]'")
+        if "stage_details" not in existing_cols:
+            conn.execute("ALTER TABLE tracked_jobs ADD COLUMN stage_details TEXT DEFAULT '{}'")
         conn.commit()
+    _migrate_final_round()
     log.info(f"DB ready at {DB_PATH}")
+
+
+def _latest_interview_round(custom_stages: list) -> str:
+    """The furthest interview round a job has: its highest-numbered extra round,
+    else the base "Interview" (round 1)."""
+    rounds = [s for s in custom_stages if _ROUND_RE.match(str(s))]
+    if not rounds:
+        return "Interview"
+    return max(rounds, key=lambda s: int(_ROUND_RE.match(s).group(1)))
+
+
+def _migrate_final_round():
+    """One-off: "Final Round" is no longer a stage — round count is user-driven.
+    Any job carrying a Final Round stamp is remapped onto its latest interview
+    round (keeping that round's own date if it already has one)."""
+    migrated = 0
+    with _connect() as conn:
+        rows = conn.execute("SELECT id, stages, custom_stages FROM tracked_jobs").fetchall()
+        for row in rows:
+            try:
+                stages = json.loads(row["stages"] or "{}")
+                custom = json.loads(row["custom_stages"] or "[]")
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if "Final Round" not in stages:
+                continue
+            stamp = stages.pop("Final Round")
+            target = _latest_interview_round(custom)
+            stages.setdefault(target, stamp)
+            conn.execute(
+                "UPDATE tracked_jobs SET stages=? WHERE id=?",
+                (json.dumps(stages), row["id"]),
+            )
+            migrated += 1
+        if migrated:
+            conn.commit()
+    if migrated:
+        log.info(f"Migrated {migrated} job(s) off the retired 'Final Round' stage")
 
 
 def upsert_job(job: dict) -> dict:
@@ -107,6 +152,7 @@ def upsert_job(job: dict) -> dict:
                 "research": "",
                 "extra_dates": "{}",
                 "custom_stages": "[]",
+                "stage_details": "{}",
                 "created_at": now,
                 "updated_at": now,
             }
@@ -115,12 +161,12 @@ def upsert_job(job: dict) -> dict:
                     id, title, company, location, url, source,
                     cv_profile, role_searched, salary_raw, salary_min, salary_max,
                     description, status, applied_date, stages, notes, tasks,
-                    research, extra_dates, custom_stages, created_at, updated_at
+                    research, extra_dates, custom_stages, stage_details, created_at, updated_at
                 ) VALUES (
                     :id, :title, :company, :location, :url, :source,
                     :cv_profile, :role_searched, :salary_raw, :salary_min, :salary_max,
                     :description, :status, :applied_date, :stages, :notes, :tasks,
-                    :research, :extra_dates, :custom_stages, :created_at, :updated_at
+                    :research, :extra_dates, :custom_stages, :stage_details, :created_at, :updated_at
                 )
             """, data)
         conn.commit()
@@ -154,7 +200,7 @@ def update_job(job_id: str, updates: dict) -> Optional[dict]:
     allowed = {
         "status", "applied_date", "stages", "notes", "tasks",
         "research", "extra_dates", "company", "location", "salary_raw",
-        "description", "url", "custom_stages",
+        "description", "url", "custom_stages", "stage_details",
     }
     fields = {k: v for k, v in updates.items() if k in allowed}
     if not fields:
@@ -163,7 +209,7 @@ def update_job(job_id: str, updates: dict) -> Optional[dict]:
     fields["updated_at"] = datetime.utcnow().isoformat()
 
     # Serialise JSON fields
-    for json_field in ("stages", "notes", "tasks", "extra_dates", "custom_stages"):
+    for json_field in ("stages", "notes", "tasks", "extra_dates", "custom_stages", "stage_details"):
         if json_field in fields and not isinstance(fields[json_field], str):
             fields[json_field] = json.dumps(fields[json_field])
 
@@ -198,10 +244,10 @@ def get_stats() -> dict:
 
 def _deserialise(row: dict) -> dict:
     """Parse JSON string fields back to Python objects."""
-    for field in ("stages", "notes", "tasks", "extra_dates", "custom_stages"):
+    for field in ("stages", "notes", "tasks", "extra_dates", "custom_stages", "stage_details"):
         if isinstance(row.get(field), str):
             try:
                 row[field] = json.loads(row[field])
             except (json.JSONDecodeError, TypeError):
-                row[field] = {} if field in ("stages", "extra_dates") else []
+                row[field] = {} if field in ("stages", "extra_dates", "stage_details") else []
     return row

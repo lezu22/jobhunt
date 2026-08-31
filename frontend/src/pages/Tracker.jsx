@@ -1,36 +1,108 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api } from '../api.js'
 import { SectionTitle, Spinner, Toast, Modal, Input, Select, Btn, Label } from '../components/UI.jsx'
-import TrackerCard from '../components/TrackerCard.jsx'
+import TrackerCard, { currentStageOf } from '../components/TrackerCard.jsx'
 import PipelineOverview from '../components/PipelineOverview.jsx'
+import KeyDatesCalendar from '../components/KeyDatesCalendar.jsx'
+import { ROUND_RE } from '../components/StatusPipeline.jsx'
 
+// Filter chips follow the job's stage identity (same source of truth as the
+// card dropdown and stage sort); interview rounds group under "Interview".
 const FILTERS = [
-  { value: 'all', label: 'All' },
-  { value: 'none', label: 'Not Applied' },
-  { value: 'cv_submitted', label: 'CV Submitted' },
-  { value: 'applied', label: 'Applied' },
-  { value: 'interview', label: 'Interview' },
-  { value: 'offer', label: 'Offer' },
-  { value: 'negotiating', label: 'Negotiating' },
-  { value: 'hired', label: 'Hired' },
-  { value: 'rejected', label: 'Rejected' },
-  { value: 'withdrawn', label: 'Withdrawn' },
+  { value: 'all',            label: 'All' },
+  { value: 'none',           label: 'Not Applied' },
+  { value: 'CV Submitted',   label: 'CV Submitted' },
+  { value: 'Applied',        label: 'Applied' },
+  { value: 'Discovery Call', label: 'Discovery Call' },
+  { value: 'Interview',      label: 'Interview' },
+  { value: 'Offer',          label: 'Offer' },
+  { value: 'Negotiation',    label: 'Negotiating' },
+  { value: 'hired',          label: 'Hired' },
+  { value: 'rejected',       label: 'Rejected' },
+  { value: 'withdrawn',      label: 'Withdrawn' },
 ]
 
-const NEW_STATUS_OPTIONS = FILTERS.filter(f => f.value !== 'all')
+function jobFilterKey(job) {
+  const stage = currentStageOf(job)
+  return ROUND_RE.test(stage) ? 'Interview' : stage
+}
+
+// The Add Job modal still sets the coarse backend status directly.
+const NEW_STATUS_OPTIONS = [
+  { value: 'none',         label: '– Not Applied' },
+  { value: 'cv_submitted', label: 'CV Submitted' },
+  { value: 'applied',      label: 'Applied' },
+  { value: 'interview',    label: 'Interview' },
+  { value: 'offer',        label: 'Offer' },
+  { value: 'negotiating',  label: 'Negotiating' },
+  { value: 'hired',        label: 'Hired' },
+  { value: 'rejected',     label: 'Rejected' },
+  { value: 'withdrawn',    label: 'Withdrawn' },
+]
 
 const EMPTY_DRAFT = { title: '', company: '', location: '', url: '', salary: '', status: 'none', description: '' }
+
+const SORT_OPTIONS = [
+  { value: 'stage',   label: 'Stage' },
+  { value: 'edited',  label: 'Last Edited' },
+  { value: 'added',   label: 'Last Added' },
+  { value: 'company', label: 'Company' },
+]
+
+// Rank order for stage sorting (furthest-along shown first): the active
+// pipeline ranks highest, while dead applications (rejected/withdrawn) rank
+// below everything so they sink to the bottom of the list. Interview rounds
+// slot after Interview via fractional ranks (R2 → +.02, R3 → +.03, ...).
+const STAGE_ORDER = ['withdrawn', 'rejected', 'none', 'CV Submitted', 'Applied', 'Discovery Call', 'Interview', 'Offer', 'Negotiation', 'hired']
+
+function stageRank(job) {
+  const stage = currentStageOf(job)
+  const round = stage.match(ROUND_RE)
+  if (round) return STAGE_ORDER.indexOf('Interview') + parseInt(round[1], 10) / 100
+  const idx = STAGE_ORDER.indexOf(stage)
+  return idx === -1 ? STAGE_ORDER.indexOf('none') : idx
+}
+
+const byEdited = (a, b) => (b.updated_at || b.created_at || '').localeCompare(a.updated_at || a.created_at || '')
+
+function sortJobs(jobs, sort) {
+  return [...jobs].sort((a, b) => {
+    if (sort === 'added') return (b.created_at || '').localeCompare(a.created_at || '')
+    if (sort === 'stage') return stageRank(b) - stageRank(a) || byEdited(a, b) // furthest along first
+    if (sort === 'company') {
+      // Missing company sorts last; ties broken by most recently edited
+      const ca = (a.company || '￿').toLowerCase()
+      const cb = (b.company || '￿').toLowerCase()
+      return ca.localeCompare(cb) || byEdited(a, b)
+    }
+    return byEdited(a, b) // default: last edited
+  })
+}
 
 export default function TrackerPage() {
   const [jobs, setJobs] = useState([])
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
+  const [sort, setSort] = useState('stage')
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState(null)
   const [showAdd, setShowAdd] = useState(false)
   const [addDraft, setAddDraft] = useState(EMPTY_DRAFT)
   const [adding, setAdding] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [highlightId, setHighlightId] = useState(null)
+
+  // Jump from a calendar entry to its job card: clear any filter hiding it,
+  // scroll it into view, and highlight + expand it briefly.
+  const navigateToJob = (id) => {
+    setFilter('all')
+    setSearch('')
+    setHighlightId(id)
+    setTimeout(() => {
+      document.getElementById(`tracker-job-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 80)
+    setTimeout(() => setHighlightId(null), 2500)
+  }
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type })
@@ -102,7 +174,7 @@ export default function TrackerPage() {
   }
 
   const filtered = jobs.filter(job => {
-    if (filter !== 'all' && job.status !== filter) return false
+    if (filter !== 'all' && jobFilterKey(job) !== filter) return false
     if (search) {
       const q = search.toLowerCase()
       if (!job.title?.toLowerCase().includes(q) && !job.company?.toLowerCase().includes(q)) return false
@@ -111,7 +183,8 @@ export default function TrackerPage() {
   })
 
   const counts = jobs.reduce((acc, j) => {
-    acc[j.status || 'none'] = (acc[j.status || 'none'] || 0) + 1
+    const key = jobFilterKey(j)
+    acc[key] = (acc[key] || 0) + 1
     return acc
   }, {})
 
@@ -128,6 +201,8 @@ export default function TrackerPage() {
       </div>
 
       {!loading && <PipelineOverview jobs={jobs} />}
+
+      {!loading && jobs.length > 0 && <KeyDatesCalendar jobs={jobs} onSelectJob={navigateToJob} />}
 
       {/* Status filter chips */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
@@ -155,13 +230,25 @@ export default function TrackerPage() {
         ))}
       </div>
 
-      {/* Search */}
-      <input
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-        placeholder="Search by title or company..."
-        style={{ marginBottom: 20, width: 280, background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text)', padding: '8px 12px', borderRadius: 6, fontFamily: 'var(--mono)', fontSize: 12, outline: 'none' }}
-      />
+      {/* Search + sort */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 20, flexWrap: 'wrap' }}>
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search by title or company..."
+          style={{ width: 280, background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text)', padding: '8px 12px', borderRadius: 6, fontFamily: 'var(--mono)', fontSize: 12, outline: 'none' }}
+        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Sort</span>
+          <select
+            value={sort}
+            onChange={e => setSort(e.target.value)}
+            style={{ background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text)', padding: '8px 10px', borderRadius: 6, fontFamily: 'var(--mono)', fontSize: 12, cursor: 'pointer', outline: 'none' }}
+          >
+            {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+      </div>
 
       {loading && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center', padding: 60 }}>
@@ -179,12 +266,13 @@ export default function TrackerPage() {
       )}
 
       {/* Job list */}
-      {filtered.map(job => (
+      {sortJobs(filtered, sort).map(job => (
         <TrackerCard
           key={job.id}
           job={job}
           onUpdate={updateJob}
           onDelete={deleteJob}
+          highlight={job.id === highlightId}
         />
       ))}
 
