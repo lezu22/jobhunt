@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import database
 from scraper.base import job_id
+from scraper.filters import job_matches_exclusions, listing_keys
 from scraper.runner import run_search
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -32,6 +33,7 @@ SEARCH_CONFIG_PATH = CONFIG_DIR / "search_config.json"
 URLS_PATH          = CONFIG_DIR / "urls.json"
 RESULTS_PATH       = CONFIG_DIR / "last_results.json"
 CHECKPOINT_PATH    = CONFIG_DIR / "scrape_checkpoint.json"  # partial results during scrape
+EXCLUDES_PATH      = CONFIG_DIR / "exclude_keywords.json"   # keywords that reject a job
 
 # In-memory scrape job store  {job_id: {...}}
 scrape_jobs: dict[str, dict] = {}
@@ -56,6 +58,8 @@ async def lifespan(app: FastAPI):
             "https://technation.io/",
             "https://uk-ras.org.uk/jobs",
         ], indent=2))
+    if not EXCLUDES_PATH.exists():
+        EXCLUDES_PATH.write_text(json.dumps([], indent=2))
     yield
 
 
@@ -92,6 +96,31 @@ async def save_urls(request: Request):
     return {"ok": True}
 
 
+def _load_excludes() -> list[str]:
+    if not EXCLUDES_PATH.exists():
+        return []
+    try:
+        data = json.loads(EXCLUDES_PATH.read_text())
+        return [k for k in data if isinstance(k, str) and k.strip()]
+    except Exception:
+        return []
+
+
+@app.get("/api/excludes")
+def get_excludes():
+    return _load_excludes()
+
+
+@app.post("/api/excludes")
+async def save_excludes(request: Request):
+    data = await request.json()
+    if not isinstance(data, list) or not all(isinstance(k, str) for k in data):
+        raise HTTPException(400, "Expected a JSON array of strings")
+    keywords = sorted({k.strip() for k in data if k.strip()}, key=str.lower)
+    EXCLUDES_PATH.write_text(json.dumps(keywords, indent=2))
+    return {"ok": True, "keywords": keywords}
+
+
 # ─── Scraper ─────────────────────────────────────────────────────────────────
 
 class ScrapeRequest(BaseModel):
@@ -101,7 +130,8 @@ class ScrapeRequest(BaseModel):
 
 
 def _run_scrape_sync(job_id: str, config: dict, urls: list,
-                     min_salary, max_salary, resume: bool):
+                     min_salary, max_salary, resume: bool,
+                     exclude_keywords: list[str], skip_ids: set):
     job = scrape_jobs[job_id]
     job["status"] = "running"
 
@@ -125,6 +155,8 @@ def _run_scrape_sync(job_id: str, config: dict, urls: list,
             config, urls, min_salary, max_salary,
             progress_callback=on_progress,
             checkpoint_path=CHECKPOINT_PATH,
+            exclude_keywords=exclude_keywords,
+            skip_ids=skip_ids,
         )
         # On completion, promote checkpoint to final results
         RESULTS_PATH.write_text(json.dumps(results, indent=2))
@@ -165,6 +197,8 @@ async def start_scrape(req: ScrapeRequest, background_tasks: BackgroundTasks):
         loop.run_in_executor, None,
         _run_scrape_sync,
         job_id, config, urls, req.min_salary, req.max_salary, req.resume,
+        _load_excludes(),
+        {j["id"] for j in database.get_all_jobs()},  # never re-scrape tracked jobs
     )
     return {"job_id": job_id}
 
@@ -213,19 +247,79 @@ def clear_checkpoint():
 
 # ─── Results ─────────────────────────────────────────────────────────────────
 
+def _filter_results_payload(data: dict) -> dict:
+    """Hide unwanted jobs from a results payload before serving it:
+    exclusion-keyword matches, jobs already in the tracker, and duplicate
+    listings (first occurrence wins). Applies retroactively to results
+    scraped before these rules existed; the underlying files are not
+    modified, so relaxing a rule un-hides jobs."""
+    keywords = _load_excludes()
+    tracked_ids = {j["id"] for j in database.get_all_jobs()}
+    excluded = tracked = duplicates = 0
+    seen: set[str] = set()
+    for roles in (data.get("results") or {}).values():
+        for role, jobs in (roles or {}).items():
+            if not jobs:
+                continue
+            kept = []
+            for job in jobs:
+                if job_matches_exclusions(job, keywords):
+                    excluded += 1
+                    continue
+                if job.get("id") in tracked_ids:
+                    tracked += 1
+                    continue
+                keys = listing_keys(job)
+                if keys and keys & seen:
+                    duplicates += 1
+                    continue
+                seen |= keys
+                kept.append(job)
+            roles[role] = kept if kept else None
+    data["_excluded_count"] = excluded
+    data["_tracked_hidden"] = tracked
+    data["_duplicates_hidden"] = duplicates
+    return data
+
+
 @app.get("/api/results")
 def get_results():
     # Return final results, or partial checkpoint if scrape was interrupted
     if RESULTS_PATH.exists():
-        return json.loads(RESULTS_PATH.read_text())
+        return _filter_results_payload(json.loads(RESULTS_PATH.read_text()))
     if CHECKPOINT_PATH.exists():
         try:
             data = json.loads(CHECKPOINT_PATH.read_text())
             data["_partial"] = True
-            return data
+            return _filter_results_payload(data)
         except Exception:
             pass
     return {"results": {}, "generated_at": None}
+
+
+@app.post("/api/results/refilter")
+def refilter_results():
+    """Permanently re-apply the current filters to the stored scrape results —
+    exclusion keywords, duplicate collapse, and tracked-job removal — so results
+    that newly match the filters are pruned without a fresh scrape. (Serving
+    already hides them dynamically; this makes the pruning permanent.)"""
+    removed = {"excluded": 0, "tracked": 0, "duplicates": 0}
+    touched = False
+    for path in [RESULTS_PATH, CHECKPOINT_PATH]:
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text())
+        except Exception:
+            continue
+        data = _filter_results_payload(data)
+        removed["excluded"]   += data.pop("_excluded_count", 0)
+        removed["tracked"]    += data.pop("_tracked_hidden", 0)
+        removed["duplicates"] += data.pop("_duplicates_hidden", 0)
+        path.write_text(json.dumps(data, indent=2))
+        touched = True
+    removed["total"] = sum(removed.values())
+    return {"ok": True, "had_results": touched, **removed}
 
 
 @app.delete("/api/results/untracked")
@@ -328,7 +422,7 @@ def get_stats():
     for path in [RESULTS_PATH, CHECKPOINT_PATH]:
         if path.exists():
             try:
-                data = json.loads(path.read_text())
+                data = _filter_results_payload(json.loads(path.read_text()))
                 for cv_roles in data.get("results", {}).values():
                     for jobs in (cv_roles or {}).values():
                         if jobs:
