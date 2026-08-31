@@ -4,6 +4,7 @@ Uses a single 'tracked_jobs' table with JSON columns for flexible data.
 """
 
 import json
+import os
 import re
 import sqlite3
 import logging
@@ -13,7 +14,8 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
-DB_PATH = Path(__file__).parent / "data" / "jobhunt.db"
+# JOBHUNT_DB lets tests/demos point the whole app at a scratch DB.
+DB_PATH = Path(os.environ.get("JOBHUNT_DB") or Path(__file__).parent / "data" / "jobhunt.db")
 
 _ROUND_RE = re.compile(r"^Interview Round (\d+)$")
 
@@ -22,6 +24,9 @@ def _connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
+    # Needed so deleting a job cascades story_job_links (stories feature);
+    # no pre-existing tables declare FKs, so this changes nothing else.
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 

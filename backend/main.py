@@ -19,6 +19,8 @@ from pydantic import BaseModel
 sys.path.insert(0, str(Path(__file__).parent))
 
 import database
+from stories import migrate as stories_migrate
+from stories.router import router as stories_router
 from scraper.base import job_id
 from scraper.filters import job_matches_exclusions, listing_keys
 from scraper.runner import run_search
@@ -42,6 +44,7 @@ scrape_jobs: dict[str, dict] = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database.init_db()
+    stories_migrate.migrate()
     if not SEARCH_CONFIG_PATH.exists():
         SEARCH_CONFIG_PATH.write_text(json.dumps({
             "hybrid": ["Systems Integration Engineer", "Autonomous Systems Engineer"],
@@ -70,6 +73,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"], allow_headers=["*"],
 )
+app.include_router(stories_router)
 
 
 # ─── Config ──────────────────────────────────────────────────────────────────
