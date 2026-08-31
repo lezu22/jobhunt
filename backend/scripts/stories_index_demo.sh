@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Seeds a scratch DB with demo Work Stories data and serves the backend on
-# port 8000 (so the vite dev server's /api proxy hits it). Live DB untouched.
+# port 8010 — deliberately NOT 8000, so a live jobhunt backend keeps running
+# untouched. Live DB untouched too.
 #
 #   terminal 1:  cd backend && bash scripts/stories_index_demo.sh
-#   terminal 2:  cd frontend && npm run dev     → http://localhost:5173/stories
+#   terminal 2:  cd frontend && JOBHUNT_API=http://localhost:8010 npm run dev -- --port 5174
+#   → http://localhost:5174/stories
 set -euo pipefail
 
 export JOBHUNT_DB=${JOBHUNT_DB:-/tmp/stories-index-demo.db}
@@ -81,4 +83,8 @@ story(
 print(f"seeded {database.DB_PATH}: 3 categories (one empty), 3 stories + 1 uncategorised note, 2 jobs")
 EOF
 
-exec python3 -m uvicorn main:app --port 8000
+echo
+echo "backend up on :8010 — now run:"
+echo "  cd frontend && JOBHUNT_API=http://localhost:8010 npm run dev -- --port 5174"
+echo "  then open http://localhost:5174/stories"
+exec python3 -m uvicorn main:app --port 8010
