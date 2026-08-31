@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Btn, Select, Label } from './UI.jsx'
 import StatusPipeline, { STAGE_TO_STATUS, markStageReached, getEffectiveStages, stageSupportsTime, isActionStage, stageColorFor, STAGE_REACHED, stageDate } from './StatusPipeline.jsx'
 
-const TERMINAL_STATUSES = ['hired', 'rejected', 'withdrawn']
+const TERMINAL_STATUSES = ['hired', 'rejected', 'withdrawn', 'ghosted']
 
 // ── Single source of truth: the job's own stage list ─────────────────────────
 // The dropdown is generated from getEffectiveStages(custom_stages), so any
@@ -18,6 +18,7 @@ function stageDropdownOptions(customStages = []) {
     { value: 'hired',     label: 'Hired' },
     { value: 'rejected',  label: 'Rejected' },
     { value: 'withdrawn', label: 'Withdrawn' },
+    { value: 'ghosted',   label: 'Ghosted' },
   ]
 }
 
@@ -46,7 +47,7 @@ function applySelection(val, stages = {}, customStages = []) {
     return { status: 'none', stages: {} }
   }
   if (val === 'hired') return { status: 'hired', stages: markStageReached(ordered, stages, ordered[ordered.length - 1]) }
-  if (val === 'rejected' || val === 'withdrawn') return { status: val, stages } // terminal: keep history
+  if (val === 'rejected' || val === 'withdrawn' || val === 'ghosted') return { status: val, stages } // terminal: keep history
   const idx = ordered.indexOf(val)
   if (idx === -1) return { status: statusForStages(stages, 'none'), stages }
   const updated = {}
@@ -58,10 +59,10 @@ function applySelection(val, stages = {}, customStages = []) {
 }
 
 // Status mirrors the furthest pipeline stage reached, in both directions — checking a stage
-// advances it, unchecking one rolls it back — except a terminal status (rejected/withdrawn/hired)
-// is a deliberate call that stage-editing alone shouldn't silently undo.
+// advances it, unchecking one rolls it back — except a terminal status (rejected/withdrawn/
+// ghosted/hired) is a deliberate call that stage-editing alone shouldn't silently undo.
 function statusForStages(stages, currentStatus) {
-  if (currentStatus === 'rejected' || currentStatus === 'withdrawn' || currentStatus === 'hired') return currentStatus
+  if (TERMINAL_STATUSES.includes(currentStatus)) return currentStatus
   let derived = 'none'
   // Custom stages never appear in STAGE_TO_STATUS, so iterating its keys (already in progression
   // order) covers every status-mapped stage without needing the per-job effective stage list.
@@ -203,8 +204,8 @@ export default function TrackerCard({ job, onUpdate, onDelete, highlight = false
   const noteCount = (job.notes || []).length
 
   // Closed-out applications recede visually. Driven off `data` (the draft while
-  // editing) so the muting lifts the instant a status leaves rejected/withdrawn.
-  const closed = data.status === 'rejected' || data.status === 'withdrawn'
+  // editing) so the muting lifts the instant a status leaves rejected/withdrawn/ghosted.
+  const closed = data.status === 'rejected' || data.status === 'withdrawn' || data.status === 'ghosted'
   const cardClass = [editing && 'edit-glow', closed && 'card-closed'].filter(Boolean).join(' ')
 
   return (
@@ -688,7 +689,7 @@ export function stageColor(job) {
   return stageColorFor(currentStageOf(job))
 }
 
-const STAGE_LABELS = { none: 'Not Applied', hired: 'Hired', rejected: 'Rejected', withdrawn: 'Withdrawn' }
+const STAGE_LABELS = { none: 'Not Applied', hired: 'Hired', rejected: 'Rejected', withdrawn: 'Withdrawn', ghosted: 'Ghosted' }
 
 // Stage changes used to be implicitly datestamped in `stages`; now that stage
 // dates are user-only, the "when did this move" history lives in the activity

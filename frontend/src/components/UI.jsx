@@ -129,6 +129,7 @@ export function Badge({ status }) {
     hired:        { bg: 'rgba(0,229,160,0.35)',  color: 'var(--accent)', label: 'Hired' },
     rejected:     { bg: 'rgba(239,68,68,0.2)',   color: '#f87171',       label: 'Rejected' },
     withdrawn:    { bg: 'rgba(74,74,102,0.2)',   color: 'var(--text3)',  label: 'Withdrawn' },
+    ghosted:      { bg: 'rgba(143,137,168,0.18)', color: '#a8a2c0',      label: 'Ghosted' },
   }
   const s = map[status] || map.none
   return (

@@ -28,8 +28,8 @@ function stageDate(value) {
 // Per-stage accent colours — the single source for the card left-edge bar, the
 // edit-mode glow, and the pipeline-overview diagram: a violet → indigo → blue
 // → cyan → teal sweep that converges naturally on the theme's hired green, so
-// a job visibly "warms up" as it advances. Rejected/withdrawn sit outside the
-// progression.
+// a job visibly "warms up" as it advances. Rejected/withdrawn/ghosted sit
+// outside the progression.
 const STAGE_COLORS = {
   none:             '#252538', // matches --border: visually "no stage yet"
   'CV Submitted':   '#8b5cf6', // violet — matches --accent2 family
@@ -41,6 +41,7 @@ const STAGE_COLORS = {
   hired:            '#00e5a0', // the accent green, fully arrived
   rejected:         '#ef4444',
   withdrawn:        '#4a4a66',
+  ghosted:          '#8f89a8', // pale spectral lavender — faded out, not slammed shut
 }
 
 // Colour for a stage name in either form ("Hired" node labels or "hired"

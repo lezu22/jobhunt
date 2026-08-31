@@ -5,7 +5,7 @@ import { BASE_STAGES, STAGE_INFO, stageColorFor } from './StatusPipeline.jsx'
 
 // Node colours come from the shared per-stage palette so the diagram matches
 // the card accents exactly. Only the two non-stage nodes get their own colour.
-const TERMINAL_NODES = new Set(['Hired', 'Rejected', 'Withdrawn', 'Still Active'])
+const TERMINAL_NODES = new Set(['Hired', 'Rejected', 'Withdrawn', 'Ghosted', 'Still Active'])
 
 function nodeColor(name) {
   if (name === 'Still Active') return 'var(--accent3)'  // not a stage: amber "in flight"
@@ -29,12 +29,12 @@ function aggregateStages(jobs) {
 }
 
 // Traces each job's actual path — Not Applied -> every stage it reached, in order -> wherever it exited
-// (Hired / Rejected / Withdrawn / Still Active) — and tallies how many jobs walked each edge. This is
+// (Hired / Rejected / Withdrawn / Ghosted / Still Active) — and tallies how many jobs walked each edge. This is
 // what makes the branch points real: a job rejected right after "Applied" contributes a
 // Applied -> Rejected edge, not a generic share of the final node.
 function buildSankeyData(jobs) {
   const stages = aggregateStages(jobs)
-  const canonicalOrder = ['Not Applied', ...stages, 'Hired', 'Still Active', 'Withdrawn', 'Rejected']
+  const canonicalOrder = ['Not Applied', ...stages, 'Hired', 'Still Active', 'Withdrawn', 'Ghosted', 'Rejected']
 
   const linkWeights = {}
   jobs.forEach(job => {
@@ -44,6 +44,7 @@ function buildSankeyData(jobs) {
     const exit = job.status === 'hired' ? 'Hired'
       : job.status === 'rejected' ? 'Rejected'
       : job.status === 'withdrawn' ? 'Withdrawn'
+      : job.status === 'ghosted' ? 'Ghosted'
       : 'Still Active'
     const seq = [...path, exit]
     for (let i = 0; i < seq.length - 1; i++) {
