@@ -1,6 +1,8 @@
 # Job Hunt Command Centre
 
-A full-stack job search and application tracking app.
+[![CI](https://github.com/lezu22/jobhunt/actions/workflows/ci.yml/badge.svg)](https://github.com/lezu22/jobhunt/actions/workflows/ci.yml)
+
+A full-stack job search and application tracking app. See [docs/CI_GUIDE.md](docs/CI_GUIDE.md) for how this repo's CI pipeline works.
 
 ```
 React frontend ↔ FastAPI backend ↔ SQLite database
