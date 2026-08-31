@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Optional, Callable
 from urllib.parse import urlparse
 
+from scraper.filters import dedupe_jobs, filter_excluded, listing_keys
 from scraper.salary import salary_in_band
 from scraper.sites.linkedin import LinkedInScraper
 from scraper.sites.indeed import IndeedScraper
@@ -74,12 +75,17 @@ def run_search(
     max_salary: Optional[float] = None,
     progress_callback: Optional[Callable] = None,
     checkpoint_path: Optional[Path] = None,
+    exclude_keywords: Optional[list[str]] = None,
+    skip_ids: Optional[set[str]] = None,
 ) -> dict:
     """
     config:           {"cv_name": ["role1", "role2"], ...}
     urls:             list of base URLs to search
     checkpoint_path:  if set, save partial results here after each role
                       and resume from it if it exists
+    exclude_keywords: drop any job whose title/company/description
+                      contains one of these (case-insensitive)
+    skip_ids:         job ids to drop on sight (e.g. already-tracked jobs)
     """
     total_roles = sum(len(roles) for roles in config.values())
     total_tasks = total_roles * len(urls)
@@ -101,6 +107,15 @@ def run_search(
                 log.info(f"Resuming from checkpoint: {list(saved['results'].keys())}")
         except Exception:
             pass
+
+    # Run-wide duplicate detection: seed with tracked/skipped ids and
+    # everything already in the checkpoint, so a listing discovered once
+    # (in any role or CV profile) is never added again.
+    seen_keys: set[str] = set(skip_ids or [])
+    for roles in output["results"].values():
+        for jobs in (roles or {}).values():
+            for j in (jobs or []):
+                seen_keys |= listing_keys(j)
 
     for cv_name, roles in config.items():
         if cv_name not in output["results"]:
@@ -143,16 +158,21 @@ def run_search(
 
                 time.sleep(0.3)
 
-            # Deduplicate
-            seen_ids: set[str] = set()
-            unique = []
-            for job in all_found:
-                if job["id"] not in seen_ids:
-                    seen_ids.add(job["id"])
-                    unique.append(job)
+            # Deduplicate against everything discovered so far this run
+            # (all roles/CVs, checkpoint, and skip_ids) — first find wins
+            unique, dropped_dupes = dedupe_jobs(all_found, seen_keys)
+            if dropped_dupes:
+                log.info(f"  Dropped {dropped_dupes} duplicate/already-tracked job(s)")
 
             # Salary filter
             filtered = [j for j in unique if salary_in_band(j["salary"], min_salary, max_salary)]
+
+            # Exclusion keyword filter
+            if exclude_keywords:
+                filtered, dropped = filter_excluded(filtered, exclude_keywords)
+                if dropped:
+                    log.info(f"  Excluded {dropped} job(s) matching exclusion keywords")
+
             output["results"][cv_name][role] = filtered if filtered else None
 
             # Save checkpoint after every role so we can resume

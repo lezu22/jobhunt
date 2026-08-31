@@ -17,6 +17,8 @@ export const api = {
   saveConfig: (data) => req('POST', '/config', data),
   getUrls:    ()     => req('GET',  '/urls'),
   saveUrls:   (data) => req('POST', '/urls', data),
+  getExcludes:  ()     => req('GET',  '/excludes'),
+  saveExcludes: (data) => req('POST', '/excludes', data),
 
   // Scraper
   startScrape:     (opts = {})  => req('POST',   '/scrape', opts),
@@ -26,6 +28,7 @@ export const api = {
 
   // Results
   getResults: () => req('GET', '/results'),
+  refilterResults: () => req('POST', '/results/refilter'),
   purgeUntrackedResults: () => req('DELETE', '/results/untracked'),
   deleteResult: (jobId) => req('DELETE', `/results/${jobId}`),
 

@@ -3,6 +3,7 @@ backend/data/
 backend/config/search_config.json
 backend/config/urls.json
 backend/config/last_results.json
+backend/config/exclude_keywords.json
 backend/config/scrape_checkpoint.json
 
 # Python

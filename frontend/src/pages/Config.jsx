@@ -4,6 +4,8 @@ import { Btn, Card, SectionTitle, Toast } from '../components/UI.jsx'
 
 export default function ConfigPage() {
   const [config, setConfig] = useState({})
+  const [excludes, setExcludes] = useState([])
+  const [newExclude, setNewExclude] = useState('')
   const [salaryMin, setSalaryMin] = useState('')
   const [salaryMax, setSalaryMax] = useState('')
   const [toast, setToast] = useState(null)
@@ -13,6 +15,9 @@ export default function ConfigPage() {
   useEffect(() => {
     api.getConfig().then(data => {
       setConfig(data || {})
+    }).catch(() => {})
+    api.getExcludes().then(data => {
+      setExcludes(data || [])
     }).catch(() => {})
   }, [])
 
@@ -24,11 +29,28 @@ export default function ConfigPage() {
   const save = async () => {
     try {
       await api.saveConfig(config)
+      const res = await api.saveExcludes(excludes)
+      setExcludes(res.keywords || excludes)
       setDirty(false)
       showToast('Search config saved!')
     } catch (e) {
       showToast('Save failed: ' + e.message, 'error')
     }
+  }
+
+  const addExclude = () => {
+    const kw = newExclude.trim()
+    if (!kw) return
+    if (!excludes.some(k => k.toLowerCase() === kw.toLowerCase())) {
+      setExcludes(list => [...list, kw])
+      setDirty(true)
+    }
+    setNewExclude('')
+  }
+
+  const removeExclude = (idx) => {
+    setExcludes(list => list.filter((_, i) => i !== idx))
+    setDirty(true)
   }
 
   const addCV = () => {
@@ -135,6 +157,38 @@ export default function ConfigPage() {
           </div>
           <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 10 }}>
             ⓘ Jobs with no listed salary are always included regardless of filter.
+          </p>
+        </Card>
+      </div>
+
+      <div style={{ marginTop: 20 }}>
+        <SectionTitle>exclusion keywords (global)</SectionTitle>
+        <Card>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: excludes.length ? 10 : 0 }}>
+            {excludes.map((kw, i) => (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                background: 'var(--surface3)', border: '1px solid var(--border)',
+                borderRadius: 4, padding: '5px 10px',
+                fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text2)',
+              }}>
+                {kw}
+                <span onClick={() => removeExclude(i)} style={{ cursor: 'pointer', color: 'var(--text3)', marginLeft: 3, fontSize: 13, lineHeight: 1 }}>×</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              value={newExclude}
+              onChange={e => setNewExclude(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addExclude()}
+              placeholder="Add keyword e.g. security clearance..."
+              style={{ flex: 1, background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text)', padding: '9px 12px', borderRadius: 6, fontFamily: 'var(--mono)', fontSize: 12, outline: 'none' }}
+            />
+            <Btn variant="secondary" size="sm" onClick={addExclude}>+ Keyword</Btn>
+          </div>
+          <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 10 }}>
+            ⓘ Jobs whose title, company, or description contain any of these are dropped at scrape time and hidden from existing results. Removing a keyword un-hides previously hidden jobs.
           </p>
         </Card>
       </div>

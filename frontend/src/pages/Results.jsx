@@ -14,6 +14,7 @@ export default function ResultsPage() {
   const [collapsed, setCollapsed] = useState({})
   const [showPurgeConfirm, setShowPurgeConfirm] = useState(false)
   const [purging, setPurging] = useState(false)
+  const [refiltering, setRefiltering] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
 
@@ -80,6 +81,28 @@ export default function ResultsPage() {
     }
   }
 
+  const refilter = async () => {
+    setRefiltering(true)
+    try {
+      const res = await api.refilterResults()
+      const fresh = await api.getResults()
+      setResults(fresh)
+      if (res.total > 0) {
+        const parts = []
+        if (res.excluded) parts.push(`${res.excluded} matching exclusion keywords`)
+        if (res.duplicates) parts.push(`${res.duplicates} duplicate${res.duplicates !== 1 ? 's' : ''}`)
+        if (res.tracked) parts.push(`${res.tracked} already tracked`)
+        showToast(`Removed ${res.total} result${res.total !== 1 ? 's' : ''}: ${parts.join(', ')}`)
+      } else {
+        showToast('Nothing to remove — results already match your filters')
+      }
+    } catch (e) {
+      showToast('Re-filter failed: ' + e.message, 'error')
+    } finally {
+      setRefiltering(false)
+    }
+  }
+
   const purgeUntracked = async () => {
     setPurging(true)
     try {
@@ -134,6 +157,12 @@ export default function ResultsPage() {
             <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--accent)', background: 'var(--accent-dim)', padding: '6px 12px', borderRadius: 20 }}>
               {trackedIds.size} tracked
             </div>
+          )}
+          {generatedAt && (
+            <Btn variant="secondary" size="sm" onClick={refilter} disabled={refiltering}
+              title="Permanently remove stored results that match your current exclusion keywords, plus duplicates and already-tracked jobs — no new scrape needed">
+              {refiltering ? 'Filtering...' : '⟳ Re-apply Filters'}
+            </Btn>
           )}
           {untrackedCount > 0 && (
             <Btn variant="danger" size="sm" onClick={() => setShowPurgeConfirm(true)}>
