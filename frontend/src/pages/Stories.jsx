@@ -1,0 +1,160 @@
+import { useEffect, useMemo, useState } from 'react'
+import { api } from '../api.js'
+import { SectionTitle, Spinner, Toast } from '../components/UI.jsx'
+import StoryCard from '../components/stories/StoryCard.jsx'
+
+const UNCAT = 'none' // synthetic bucket id for category_id === null
+
+function CategoryHeader({ name, count, collapsed, onToggle, onMoveUp, onMoveDown }) {
+  return (
+    <div
+      onClick={onToggle}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '10px 4px', cursor: 'pointer', userSelect: 'none',
+        borderBottom: '1px solid var(--border2)', marginBottom: 10,
+      }}
+    >
+      <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--accent)' }}>
+        {collapsed ? '▸' : '▾'}
+      </span>
+      <span style={{
+        fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 700,
+        letterSpacing: '0.1em', textTransform: 'uppercase',
+      }}>
+        {name}
+      </span>
+      <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>
+        {count} {count === 1 ? 'entry' : 'entries'}
+      </span>
+      {(onMoveUp || onMoveDown) && (
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}
+              onClick={e => e.stopPropagation()}>
+          <span onClick={onMoveUp} title="Move category up"
+                style={{ cursor: onMoveUp ? 'pointer' : 'default', opacity: onMoveUp ? 0.6 : 0.15, fontFamily: 'var(--mono)', fontSize: 11 }}>▲</span>
+          <span onClick={onMoveDown} title="Move category down"
+                style={{ cursor: onMoveDown ? 'pointer' : 'default', opacity: onMoveDown ? 0.6 : 0.15, fontFamily: 'var(--mono)', fontSize: 11 }}>▼</span>
+        </span>
+      )}
+    </div>
+  )
+}
+
+export default function StoriesPage() {
+  const [categories, setCategories] = useState(null)
+  const [stories, setStories] = useState(null)
+  const [jobsById, setJobsById] = useState({})
+  const [collapsed, setCollapsed] = useState(() => new Set())
+  const [toast, setToast] = useState(null)
+
+  const load = () => Promise.all([
+    api.getStoryCategories().then(setCategories),
+    api.getStories().then(setStories),
+  ]).catch(e => setToast({ type: 'error', message: `Load failed: ${e.message}` }))
+
+  useEffect(() => {
+    load()
+    api.getTracker().then(jobs => {
+      const map = {}
+      jobs.forEach(j => { map[j.id] = j.company ? `${j.title} @ ${j.company}` : j.title })
+      setJobsById(map)
+    }).catch(() => {})
+  }, [])
+
+  // stories come position-sorted from the API; group them per bucket
+  const byBucket = useMemo(() => {
+    const map = { [UNCAT]: [] }
+    ;(categories || []).forEach(c => { map[c.id] = [] })
+    ;(stories || []).forEach(s => {
+      const key = s.category_id == null ? UNCAT : s.category_id
+      ;(map[key] = map[key] || []).push(s)
+    })
+    return map
+  }, [categories, stories])
+
+  const toggle = (key) => setCollapsed(prev => {
+    const next = new Set(prev)
+    next.has(key) ? next.delete(key) : next.add(key)
+    return next
+  })
+
+  const moveCategory = async (index, delta) => {
+    const ids = categories.map(c => c.id)
+    const j = index + delta
+    if (j < 0 || j >= ids.length) return
+    ;[ids[index], ids[j]] = [ids[j], ids[index]]
+    try {
+      await api.reorderStoryCategories(ids)
+      await load()
+    } catch (e) {
+      setToast({ type: 'error', message: `Reorder failed: ${e.message}` })
+    }
+  }
+
+  const moveStory = async (bucketKey, index, delta) => {
+    const bucket = byBucket[bucketKey]
+    const ids = bucket.map(s => s.id)
+    const j = index + delta
+    if (j < 0 || j >= ids.length) return
+    ;[ids[index], ids[j]] = [ids[j], ids[index]]
+    try {
+      await api.reorderStories(bucketKey === UNCAT ? null : bucketKey, ids)
+      await load()
+    } catch (e) {
+      setToast({ type: 'error', message: `Reorder failed: ${e.message}` })
+    }
+  }
+
+  if (!categories || !stories) {
+    return <div style={{ padding: 60, display: 'flex', justifyContent: 'center' }}><Spinner size={28} /></div>
+  }
+
+  // ordered sections: user-ordered categories, then Uncategorised always last
+  const sections = [
+    ...categories.map((c, i) => ({ key: c.id, name: c.name, index: i, isCat: true })),
+    { key: UNCAT, name: 'Uncategorised', isCat: false },
+  ]
+
+  return (
+    <div className="fade-up">
+      <SectionTitle>Work Stories</SectionTitle>
+      <div style={{ fontSize: 12, color: 'var(--text2)', margin: '-8px 0 24px' }}>
+        {stories.length} entr{stories.length === 1 ? 'y' : 'ies'} across {categories.length} categor{categories.length === 1 ? 'y' : 'ies'} + uncategorised
+      </div>
+
+      {sections.map(sec => {
+        const bucket = byBucket[sec.key] || []
+        const isCollapsed = collapsed.has(sec.key)
+        return (
+          <div key={sec.key} style={{ marginBottom: 26 }}>
+            <CategoryHeader
+              name={sec.name}
+              count={bucket.length}
+              collapsed={isCollapsed}
+              onToggle={() => toggle(sec.key)}
+              onMoveUp={sec.isCat && sec.index > 0 ? () => moveCategory(sec.index, -1) : null}
+              onMoveDown={sec.isCat && sec.index < categories.length - 1 ? () => moveCategory(sec.index, +1) : null}
+            />
+            {!isCollapsed && (
+              bucket.length === 0 ? (
+                <div style={{ fontSize: 12, color: 'var(--text3)', fontStyle: 'italic', padding: '2px 4px' }}>
+                  No stories or notes yet.
+                </div>
+              ) : bucket.map((s, i) => (
+                <StoryCard
+                  key={s.id}
+                  story={s}
+                  jobsById={jobsById}
+                  onMoveUp={i > 0 ? () => moveStory(sec.key, i, -1) : null}
+                  onMoveDown={i < bucket.length - 1 ? () => moveStory(sec.key, i, +1) : null}
+                />
+              ))
+            )}
+          </div>
+        )
+      })}
+
+      {toast && <Toast {...toast} onClose={() => setToast(null)} />}
+    </div>
+  )
+}

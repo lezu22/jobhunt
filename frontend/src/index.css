@@ -128,3 +128,35 @@ input, select, textarea { font-family: var(--mono); }
 .card-closed > * {
   filter: saturate(0.3);
 }
+
+/* ── Work Stories: rendered markdown ─────────────────────────────────────── */
+.md-body { font-size: 13px; line-height: 1.65; color: var(--text); }
+.md-body > *:first-child { margin-top: 0; }
+.md-body h1, .md-body h2, .md-body h3, .md-body h4 {
+  margin: 18px 0 8px; line-height: 1.3; font-weight: 700;
+}
+.md-body h1 { font-size: 17px; }
+.md-body h2 { font-size: 15px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.md-body h3 { font-size: 14px; }
+.md-body h4 { font-size: 13px; color: var(--text2); }
+.md-body p { margin: 8px 0; }
+.md-body ul, .md-body ol { margin: 8px 0; padding-left: 22px; }
+.md-body ul ul, .md-body ol ol, .md-body ul ol, .md-body ol ul { margin: 2px 0; }
+.md-body li { margin: 3px 0; }
+.md-body code {
+  font-family: var(--mono); font-size: 12px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 5px;
+}
+.md-body pre {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 12px; overflow-x: auto; margin: 10px 0;
+}
+.md-body pre code { background: none; border: none; padding: 0; }
+.md-body table { border-collapse: collapse; margin: 10px 0; display: block; overflow-x: auto; }
+.md-body th, .md-body td { border: 1px solid var(--border2); padding: 6px 10px; text-align: left; }
+.md-body th { background: var(--surface2); font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+.md-body blockquote { border-left: 3px solid var(--accent2); margin: 10px 0; padding: 2px 14px; color: var(--text2); }
+.md-body hr { border: none; border-top: 1px solid var(--border2); margin: 16px 0; }
+.md-body a { color: var(--accent); }
+.md-body img { max-width: 100%; }

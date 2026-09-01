@@ -167,8 +167,8 @@ re-runs the full backend suite, not just its own tests.
 |---|----|----------|------------|----------------------|-------------|--------|
 | 1 | `stories-schema` | `stories/migrate.py`, tables + indexes, wired into lifespan; migration tests | — | `python3 -m stories.migrate up/down` against a copy of `backend/data/jobhunt.db`; up→down→up leaves schema identical, `tracked_jobs` intact | review schema in `stories/migrate.py` + migration tests; optionally run the up/down check and the suite; reply "go ahead with step 2" | merged (approved 2026-08-31, incl. richer `status` output added on review feedback) |
 | 2 | `stories-crud` | `stories/db.py`, `models.py`, `router.py`; category/story/label/job-link CRUD, reorder, revert, bulk-delete; seeded-data tests incl. delete-category-moves-stories, delete-story-removes-mappings, delete-job-unlinks-stories | 1 | curl script + pytest output pasted in PR | review endpoint shapes against the plan; optionally replay `bash scripts/stories_crud_demo.sh` (scratch DB, live data untouched); reply "go ahead with step 3" | awaiting my review |
-| 3 | `stories-index` | `/stories` route, sidebar entry, read-only index: category sections (uncategorised always last), expand/collapse cards, category+story reorder | 2 | run app, view seeded data, reorder persists across reload | run the app, eyeball the index against your taste (layout/order/cards), reorder + reload; reply with UI tweaks or "go ahead with step 4" | not started |
-| 4 | `stories-editor` | story/note view page: rendered markdown (react-markdown+remark-gfm), edit mode with sessionStorage draft buffer keyed by story id, dirty indicator, discard confirm, immediate metadata chip commits (visually separated from the draft-buffered body), save→previous_body, revert-to-previous | 3 | refresh mid-edit keeps draft; save/cancel clears it; chip change survives cancel; revert works | exercise the edit flow yourself (draft survives refresh, cancel semantics, chip/body boundary feels clear); reply "go ahead with step 5" | not started |
+| 3 | `stories-index` | `/stories` route, sidebar entry, read-only index: category sections (uncategorised always last), expand/collapse cards with rendered GFM body + mappings, category+story reorder; react-markdown@10.1.0 + remark-gfm@4.0.1; `JOBHUNT_API` vite proxy override; seeded demo script | 2 | run app, view seeded data, reorder persists across reload | run `bash backend/scripts/stories_index_demo.sh` + `JOBHUNT_API=http://localhost:8010 npm run dev -- --port 5174` (or just open /stories in your running app — empty until import), eyeball layout/cards, reorder + reload; reply with UI tweaks or "go ahead with step 4" | awaiting my review |
+| 4 | `stories-editor` | story/note view page: rendered markdown (react-markdown+remark-gfm), edit mode with sessionStorage draft buffer keyed by story id, dirty indicator, discard confirm, immediate metadata chip commits (visually separated from the draft-buffered body), save→previous_body, revert-to-previous; creation UI (new category, new story/note) since the index is read-only | 3 | refresh mid-edit keeps draft; save/cancel clears it; chip change survives cancel; revert works | exercise the edit flow yourself (draft survives refresh, cancel semantics, chip/body boundary feels clear); reply "go ahead with step 5" | not started |
 | 5 | `stories-delete` | single delete confirm (names title, lists what goes with it); bulk delete: one dialog, per-row checkboxes all checked, count on the action button, visually distinct from export dialog; transactional backend path + rollback test | 4 | delete with rows unchecked removes only checked; forced mid-transaction failure deletes nothing | try single + bulk delete on seeded data, judge the two dialogs are not confusable; reply "go ahead with step 6" | not started |
 | 6 | `stories-import` | parser (H2 category, H3 title, `— Score: N/5` lifting, everything else verbatim incl. Caution lines, metadata-comment strip), upload validation (ext + UTF-8 + 2MB, retry flow), staged review screen: category resolution (create-new / map-to-existing), kind selection (no-mappings ⇒ note default), title edit, merge/split, per-record category, duplicate flagging (id ⇒ update default, title ⇒ create-new default, or skip), counts report | 2 (UI: 4) | import `story-bank.md`, verify counts + Caution lines in bodies; import twice, verify dup flow | import your real `story-bank.md`, check the staged review reads right (counts, categories, note defaults) before committing it; reply "go ahead with step 7" | not started |
 | 7 | `stories-export` | single + combined export: categories as `##` in user order (uncategorised last, empty categories skipped), titles as `###`, mappings back to `— Score: N/5` form, metadata HTML comment under each `###` (checkbox: default ON full export, OFF selection); export dialog shows the default filename in an editable field for confirm/change before download (Q3); round-trip tests | 6 | export-all → re-import → no drift, metadata stripped not duplicated; metadata-off round trip loses only meta fields | export your imported bank, diff it against the original by eye, confirm the filename edit field; reply "go ahead with step 8" | not started |
@@ -217,7 +217,8 @@ anything that could not be executed.
 - **D9** (step 1) The live DB picked up the migration at first app start after
   the lifespan wiring — expected and harmless (`up` is idempotent and purely
   additive; `tracked_jobs` untouched, 16 rows before and after,
-  `PRAGMA integrity_check` ok).
+  `PRAGMA integrity_check` ok). Confirmed during step 3: Lucas's backend runs
+  live on port 8000 with reload, so it applies migrations as code lands.
 - **D10** (step 2) Labels are pruned automatically once their last story link
   goes away (on label edit, story delete, bulk delete), so the filter
   dropdown never accumulates dead tags. There is no persistent label
@@ -229,6 +230,17 @@ anything that could not be executed.
 - **D12** (step 2) `JOBHUNT_DB` env var points the whole backend (DB layer,
   migration CLI, server) at an alternate DB file. Used by tests and
   `scripts/stories_crud_demo.sh` so checks never touch live data.
+- **D14** (step 3) `vite.config.js` proxy target is overridable via the
+  `JOBHUNT_API` env var so a dev server can point at a scratch backend;
+  `scripts/stories_index_demo.sh` seeds a scratch DB (GFM markdown, an
+  injection attempt, NDA/labels/jobs/scores, an empty category) and serves it
+  on port 8010, leaving the live app on 8000 alone. Demo/verification servers
+  use ports 8010/5174.
+- **D15** (step 3, from #6 being merged early) The original gate "final PR
+  merges only after verification" dissolved when #6 was merged mid-feature;
+  steps 1–2 are on main (harmless: backend-only, tracker untouched, CI
+  green). A fresh final PR to main will carry the remaining steps and the
+  plan-doc deletion commit, with the same gate.
 - **D13** (workflow, 2026-08-31, settled after discussion) Stacked PR flow:
   `feat/work-stories` is the one long-lived feature branch. Each step is
   built on a short-lived branch (`feat/stories-<step>`), opened as a PR into
