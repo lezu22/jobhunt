@@ -90,6 +90,26 @@ class TestSearch:
         assert client.get("/api/stories/search", params={"q": "thermal budget"}).json()
 
 
+class TestQuestionList:
+    def test_distinct_questions_with_usage_and_best_score(self, client):
+        for title, score in (("A", 5), ("B", 3)):
+            client.post("/api/stories", json={
+                "title": title, "body": "b",
+                "mappings": [{"question": "Tell me about ownership.", "score": score}],
+            })
+        client.post("/api/stories", json={
+            "title": "C", "body": "b",
+            "mappings": [{"question": "TELL ME ABOUT OWNERSHIP.", "score": 1},
+                          {"question": "Unique question?", "score": None}],
+        })
+        qs = client.get("/api/stories/questions").json()
+        own = next(q for q in qs if "ownership" in q["question"].lower())
+        assert own["uses"] == 3 and own["best_score"] == 5  # case-insensitive grouping
+        assert qs[0] == own  # most-used first
+        uniq = next(q for q in qs if q["question"] == "Unique question?")
+        assert uniq["uses"] == 1 and uniq["best_score"] is None
+
+
 class TestMigrationBackfill:
     def test_backfill_on_upgrade(self, client, tmp_path):
         """A DB created before search gets its FTS table populated by up()."""

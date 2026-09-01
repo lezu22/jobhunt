@@ -72,6 +72,11 @@ def get_search(q: str = ""):
     return db.search_stories(q)
 
 
+@router.get("/questions")
+def get_questions():
+    return db.list_questions()
+
+
 # ─── Stories: static paths ───────────────────────────────────────────────────
 
 @router.put("/order")

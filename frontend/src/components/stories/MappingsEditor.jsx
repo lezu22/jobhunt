@@ -14,7 +14,10 @@ const inputStyle = {
 // Add/remove/reorder repeater for question mappings. Pure controlled
 // component: edits go through onChange, persistence is the caller's problem
 // (it lives in the draft buffer until an explicit save).
-export default function MappingsEditor({ mappings, onChange }) {
+// `knownQuestions` feeds a datalist so a question already used on another
+// story can be picked instead of retyped — identical wording keeps search
+// results grouped across stories.
+export default function MappingsEditor({ mappings, onChange, knownQuestions = [] }) {
   const update = (i, field, value) => {
     const next = mappings.map((m, j) => (j === i ? { ...m, [field]: value } : m))
     onChange(next)
@@ -31,6 +34,14 @@ export default function MappingsEditor({ mappings, onChange }) {
 
   return (
     <div>
+      {knownQuestions.length > 0 && (
+        <datalist id="known-questions">
+          {knownQuestions.map(q => (
+            <option key={q.question} value={q.question}
+                    label={`used ${q.uses}×${q.best_score != null ? `, best ${q.best_score}/5` : ''}`} />
+          ))}
+        </datalist>
+      )}
       {mappings.map((m, i) => (
         <div key={i} style={{
           display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6,
@@ -46,7 +57,8 @@ export default function MappingsEditor({ mappings, onChange }) {
           <input
             value={m.question}
             onChange={e => update(i, 'question', e.target.value)}
-            placeholder="Interview question this story answers…"
+            placeholder="Interview question this story answers… (type to pick an existing one)"
+            list="known-questions"
             style={{ ...inputStyle, flex: 3 }}
           />
           <select

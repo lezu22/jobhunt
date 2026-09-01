@@ -464,6 +464,20 @@ def bulk_move(ids: list[str], category_id) -> int:
         conn.close()
 
 
+def list_questions() -> list[dict]:
+    """Every distinct question text in the bank (case-insensitive grouping),
+    with usage count and best score — feeds the editor's autocomplete so a
+    reused question keeps identical wording (and search groups it cleanly)."""
+    with _connect() as conn:
+        rows = conn.execute("""
+            SELECT MIN(question) AS question, COUNT(*) AS uses, MAX(score) AS best_score
+            FROM question_mappings
+            GROUP BY question COLLATE NOCASE
+            ORDER BY uses DESC, question COLLATE NOCASE
+        """).fetchall()
+    return [dict(r) for r in rows]
+
+
 # ─── Search ──────────────────────────────────────────────────────────────────
 
 # bm25 column weights (title, body, question): question text highest per spec,
