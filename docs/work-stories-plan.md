@@ -167,8 +167,8 @@ re-runs the full backend suite, not just its own tests.
 |---|----|----------|------------|----------------------|-------------|--------|
 | 1 | `stories-schema` | `stories/migrate.py`, tables + indexes, wired into lifespan; migration tests | — | `python3 -m stories.migrate up/down` against a copy of `backend/data/jobhunt.db`; up→down→up leaves schema identical, `tracked_jobs` intact | review schema in `stories/migrate.py` + migration tests; optionally run the up/down check and the suite; reply "go ahead with step 2" | merged (approved 2026-08-31, incl. richer `status` output added on review feedback) |
 | 2 | `stories-crud` | `stories/db.py`, `models.py`, `router.py`; category/story/label/job-link CRUD, reorder, revert, bulk-delete; seeded-data tests incl. delete-category-moves-stories, delete-story-removes-mappings, delete-job-unlinks-stories | 1 | curl script + pytest output pasted in PR | review endpoint shapes against the plan; optionally replay `bash scripts/stories_crud_demo.sh` (scratch DB, live data untouched); reply "go ahead with step 3" | awaiting my review |
-| 3 | `stories-index` | `/stories` route, sidebar entry, read-only index: category sections (uncategorised always last), expand/collapse cards with rendered GFM body + mappings, category+story reorder; react-markdown@10.1.0 + remark-gfm@4.0.1; `JOBHUNT_API` vite proxy override; seeded demo script | 2 | run app, view seeded data, reorder persists across reload | run `bash backend/scripts/stories_index_demo.sh` + `JOBHUNT_API=http://localhost:8010 npm run dev -- --port 5174` (or just open /stories in your running app — empty until import), eyeball layout/cards, reorder + reload; reply with UI tweaks or "go ahead with step 4" | awaiting my review |
-| 4 | `stories-editor` | story/note view page: rendered markdown (react-markdown+remark-gfm), edit mode with sessionStorage draft buffer keyed by story id, dirty indicator, discard confirm, immediate metadata chip commits (visually separated from the draft-buffered body), save→previous_body, revert-to-previous; creation UI (new category, new story/note) since the index is read-only | 3 | refresh mid-edit keeps draft; save/cancel clears it; chip change survives cancel; revert works | exercise the edit flow yourself (draft survives refresh, cancel semantics, chip/body boundary feels clear); reply "go ahead with step 5" | not started |
+| 3 | `stories-index` | `/stories` route, sidebar entry, read-only index: category sections (uncategorised always last), expand/collapse cards with rendered GFM body + mappings, category+story reorder; react-markdown@10.1.0 + remark-gfm@4.0.1; `JOBHUNT_API` vite proxy override; seeded demo script | 2 | run app, view seeded data, reorder persists across reload | run `bash backend/scripts/stories_index_demo.sh` + `JOBHUNT_API=http://localhost:8010 npm run dev -- --port 5174` (or just open /stories in your running app — empty until import), eyeball layout/cards, reorder + reload; reply with UI tweaks or "go ahead with step 4" | merged (approved 2026-09-01) |
+| 4 | `stories-editor` | story/note view page: rendered markdown (react-markdown+remark-gfm), edit mode with sessionStorage draft buffer keyed by story id, dirty indicator, discard confirm, immediate metadata chip commits (visually separated from the draft-buffered body), save→previous_body, revert-to-previous; creation UI (new category, new story/note) since the index is read-only | 3 | refresh mid-edit keeps draft; save/cancel clears it; chip change survives cancel; revert works | exercise the edit flow yourself (draft survives refresh, cancel semantics, chip/body boundary feels clear); reply "go ahead with step 5" | awaiting my review |
 | 5 | `stories-delete` | single delete confirm (names title, lists what goes with it); bulk delete: one dialog, per-row checkboxes all checked, count on the action button, visually distinct from export dialog; transactional backend path + rollback test | 4 | delete with rows unchecked removes only checked; forced mid-transaction failure deletes nothing | try single + bulk delete on seeded data, judge the two dialogs are not confusable; reply "go ahead with step 6" | not started |
 | 6 | `stories-import` | parser (H2 category, H3 title, `— Score: N/5` lifting, everything else verbatim incl. Caution lines, metadata-comment strip), upload validation (ext + UTF-8 + 2MB, retry flow), staged review screen: category resolution (create-new / map-to-existing), kind selection (no-mappings ⇒ note default), title edit, merge/split, per-record category, duplicate flagging (id ⇒ update default, title ⇒ create-new default, or skip), counts report | 2 (UI: 4) | import `story-bank.md`, verify counts + Caution lines in bodies; import twice, verify dup flow | import your real `story-bank.md`, check the staged review reads right (counts, categories, note defaults) before committing it; reply "go ahead with step 7" | not started |
 | 7 | `stories-export` | single + combined export: categories as `##` in user order (uncategorised last, empty categories skipped), titles as `###`, mappings back to `— Score: N/5` form, metadata HTML comment under each `###` (checkbox: default ON full export, OFF selection); export dialog shows the default filename in an editable field for confirm/change before download (Q3); round-trip tests | 6 | export-all → re-import → no drift, metadata stripped not duplicated; metadata-off round trip loses only meta fields | export your imported bank, diff it against the original by eye, confirm the filename edit field; reply "go ahead with step 8" | not started |
@@ -236,6 +236,15 @@ anything that could not be executed.
   injection attempt, NDA/labels/jobs/scores, an empty category) and serves it
   on port 8010, leaving the live app on 8000 alone. Demo/verification servers
   use ports 8010/5174.
+- **D16** (step 4) Title travels with the draft buffer (explicit save), not
+  the immediate-commit chips — the spec lists only category/labels/status/
+  NDA/kind/job-links as immediate. Create mode (`/stories/new?kind=…`) is the
+  one place chips don't commit instantly: no record exists until Create, and
+  the metadata panel label says so. The `title_dup` soft warning surfaces as
+  a toast on save/create.
+- **D17** (step 4) Switching kind→note while mappings exist is refused by the
+  backend (D11); the UI surfaces the error toast telling you to clear
+  mappings first rather than silently deleting them.
 - **D15** (step 3, from #6 being merged early) The original gate "final PR
   merges only after verification" dissolved when #6 was merged mid-feature;
   steps 1–2 are on main (harmless: backend-only, tracker untouched, CI
@@ -251,6 +260,33 @@ anything that could not be executed.
   step PR (committed before pushing began; reviewable in #6, approved
   locally); step 2's PR #5 was merged during a brief flow detour ahead of
   review — its review is still owed, fixes go in before step 3.
+
+- **D18** (step 4 review) Status vocabulary (from the feature spec): `draft` =
+  story is being written / not yet trusted; `gap` = a known hole in the bank —
+  a question or theme that needs a story (or has only a weak one), kept
+  visible so prep work targets it; `ready` = interview-ready. Statuses are a
+  plain CHECK constraint, trivially renameable if this reading is wrong.
+- **D19** (step 4 review) Reorder arrows on cards and category headers got a
+  much larger padded hit area that swallows clicks (a near-miss no longer
+  expands the card), with hover highlight.
+
+## Future work (agreed out of current scope, schema kept safe for it)
+
+- **F1 — Questions as first-class shared records** (raised by Lucas during
+  step 4 review, 2026-09-01): a `questions` table plus a story↔question link
+  carrying score/note/position, so one question can be attached to several
+  stories and a question view can list every story answering it with scores.
+  Deferred until after step 8 because: (a) step 8's FTS search already
+  answers the mid-interview case across stories — matching question text
+  surfaces every story with its score, without normalising identity; (b) the
+  `question — Score: N/5` export line carries no stable question id, so
+  hand-edited/imported files would spawn near-duplicate question rows and
+  need a dedupe UX; (c) it would ripple through the import parser, staged
+  review, duplicate detection and export while they are being built.
+  Migration path stays clean: `CREATE TABLE questions` + get-or-create from
+  distinct `question_mappings.question` text, then swap the text column for
+  an FK — no data loss, one migration. Revisit once search is usable and we
+  can judge whether FTS alone covers the need.
 
 ## Open questions
 
