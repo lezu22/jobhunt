@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
-import { SectionTitle, Spinner, Toast } from '../components/UI.jsx'
+import { Btn, Input, Modal, SectionTitle, Spinner, Toast } from '../components/UI.jsx'
 import StoryCard from '../components/stories/StoryCard.jsx'
 
 const UNCAT = 'none' // synthetic bucket id for category_id === null
@@ -46,6 +47,9 @@ export default function StoriesPage() {
   const [jobsById, setJobsById] = useState({})
   const [collapsed, setCollapsed] = useState(() => new Set())
   const [toast, setToast] = useState(null)
+  const [newCatOpen, setNewCatOpen] = useState(false)
+  const [newCatName, setNewCatName] = useState('')
+  const navigate = useNavigate()
 
   const load = () => Promise.all([
     api.getStoryCategories().then(setCategories),
@@ -115,9 +119,27 @@ export default function StoriesPage() {
     { key: UNCAT, name: 'Uncategorised', isCat: false },
   ]
 
+  const createCategory = async () => {
+    try {
+      await api.createStoryCategory(newCatName)
+      setNewCatOpen(false)
+      setNewCatName('')
+      await load()
+    } catch (e) {
+      setToast({ type: 'error', message: e.message.includes('409') ? 'A category with that name already exists.' : `Create failed: ${e.message}` })
+    }
+  }
+
   return (
     <div className="fade-up">
-      <SectionTitle>Work Stories</SectionTitle>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+        <SectionTitle>Work Stories</SectionTitle>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <Btn size="sm" onClick={() => navigate('/stories/new?kind=story')}>+ Story</Btn>
+          <Btn size="sm" variant="secondary" onClick={() => navigate('/stories/new?kind=note')}>+ Note</Btn>
+          <Btn size="sm" variant="ghost" onClick={() => setNewCatOpen(true)}>+ Category</Btn>
+        </span>
+      </div>
       <div style={{ fontSize: 12, color: 'var(--text2)', margin: '-8px 0 24px' }}>
         {stories.length} entr{stories.length === 1 ? 'y' : 'ies'} across {categories.length} categor{categories.length === 1 ? 'y' : 'ies'} + uncategorised
       </div>
@@ -153,6 +175,14 @@ export default function StoriesPage() {
           </div>
         )
       })}
+
+      <Modal open={newCatOpen} onClose={() => setNewCatOpen(false)} title="New category" width={420}>
+        <Input label="Name" value={newCatName} onChange={setNewCatName} placeholder="e.g. Requirements Capture" />
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <Btn variant="secondary" onClick={() => setNewCatOpen(false)}>Cancel</Btn>
+          <Btn onClick={createCategory} disabled={!newCatName.trim()}>Create</Btn>
+        </div>
+      </Modal>
 
       {toast && <Toast {...toast} onClose={() => setToast(null)} />}
     </div>

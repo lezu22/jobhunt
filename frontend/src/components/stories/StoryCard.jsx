@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import Markdown from './Markdown.jsx'
 
 const KIND_STYLE = {
@@ -58,9 +59,16 @@ export default function StoryCard({ story, jobsById, onMoveUp, onMoveDown }) {
                 style={{ cursor: onMoveDown ? 'pointer' : 'default', opacity: onMoveDown ? 0.6 : 0.15, fontSize: 9, lineHeight: 1, fontFamily: 'var(--mono)' }}>▼</span>
         </div>
         <Chip bg={kind.bg} color={kind.color}>{kind.label}</Chip>
-        <span style={{ fontWeight: 700, fontSize: 13, flexShrink: 1, minWidth: 0 }}>
+        <Link
+          to={`/stories/${story.id}`}
+          onClick={e => e.stopPropagation()}
+          title="Open"
+          style={{ fontWeight: 700, fontSize: 13, flexShrink: 1, minWidth: 0, color: 'var(--text)', textDecoration: 'none' }}
+          onMouseEnter={e => e.target.style.color = 'var(--accent)'}
+          onMouseLeave={e => e.target.style.color = 'var(--text)'}
+        >
           {story.title}
-        </span>
+        </Link>
         {story.nda_sensitive && (
           <Chip bg="rgba(245,158,11,0.2)" color="var(--accent3)" title="NDA sensitive">⚠ NDA</Chip>
         )}
