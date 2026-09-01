@@ -51,9 +51,9 @@ function CategoryHeader({ name, count, collapsed, onToggle, onMoveUp, onMoveDown
         )}
         {onDelete && (
           <span onClick={onDelete} title="Delete category (stories move to Uncategorised)"
-                style={{ cursor: 'pointer', fontSize: 12, color: 'var(--text3)', padding: '6px 8px', borderRadius: 4 }}
-                onMouseEnter={e => { e.target.style.background = 'var(--surface3)'; e.target.style.color = 'var(--danger)' }}
-                onMouseLeave={e => { e.target.style.background = 'transparent'; e.target.style.color = 'var(--text3)' }}>🗑</span>
+                style={{ cursor: 'pointer', fontSize: 12, fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--danger)', opacity: 0.7, padding: '6px 8px', borderRadius: 4 }}
+                onMouseEnter={e => { e.target.style.background = 'var(--surface3)'; e.target.style.opacity = 1 }}
+                onMouseLeave={e => { e.target.style.background = 'transparent'; e.target.style.opacity = 0.7 }}>✕</span>
         )}
       </span>
       <span onClick={e => { e.stopPropagation(); onToggle() }}
@@ -77,6 +77,8 @@ export default function StoriesPage() {
   const [bulkExcluded, setBulkExcluded] = useState(() => new Set())
   const [catAction, setCatAction] = useState(null) // {mode: 'rename'|'delete', cat}
   const [catName, setCatName] = useState('')
+  const [moveOpen, setMoveOpen] = useState(false)
+  const [moveTarget, setMoveTarget] = useState('') // '' = uncategorised
   const navigate = useNavigate()
 
   const load = () => Promise.all([
@@ -169,6 +171,20 @@ export default function StoriesPage() {
     }
   }
 
+  const runBulkMove = async () => {
+    try {
+      const target = moveTarget === '' ? null : Number(moveTarget)
+      const res = await api.bulkMoveStories(selectedStories.map(s => s.id), target)
+      setMoveOpen(false)
+      setSelected(new Set())
+      const name = target == null ? 'Uncategorised' : categories.find(c => c.id === target)?.name
+      setToast({ type: 'success', message: `Moved ${res.moved} to ${name}.` })
+      await load()
+    } catch (e) {
+      setToast({ type: 'error', message: `Nothing moved — ${e.message.replace(/^\d+: /, '').replace(/.*"detail":"([^"]+)".*/, '$1')}` })
+    }
+  }
+
   const runCatAction = async () => {
     try {
       if (catAction.mode === 'rename') {
@@ -218,6 +234,9 @@ export default function StoriesPage() {
           <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text2)' }}>
             {selected.size} selected
           </span>
+          <Btn size="sm" variant="secondary" onClick={() => { setMoveTarget(''); setMoveOpen(true) }}>
+            Move to category…
+          </Btn>
           <Btn size="sm" variant="danger" onClick={() => { setBulkExcluded(new Set()); setBulkOpen(true) }}>
             Delete selected…
           </Btn>
@@ -260,6 +279,37 @@ export default function StoriesPage() {
           </div>
         )
       })}
+
+      {/* Bulk move: neutral/accent theme — a non-destructive sibling of the
+          red delete dialog below */}
+      <Modal
+        open={moveOpen}
+        onClose={() => setMoveOpen(false)}
+        title={`Move ${selectedStories.length} to category`}
+        width={440}
+      >
+        <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 14, lineHeight: 1.6 }}>
+          Moves the selected stories/notes into one category (appended at its end, in the
+          order shown on the index). Bodies, labels, statuses and job links are untouched.
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <select
+            value={moveTarget}
+            onChange={e => setMoveTarget(e.target.value)}
+            style={{
+              width: '100%', background: 'var(--surface2)', border: '1px solid var(--border)',
+              color: 'var(--text)', padding: '9px 12px', borderRadius: 6, fontSize: 12, outline: 'none',
+            }}
+          >
+            <option value="">Uncategorised</option>
+            {categories.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+          </select>
+        </div>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <Btn variant="secondary" onClick={() => setMoveOpen(false)}>Cancel</Btn>
+          <Btn onClick={runBulkMove}>Move {selectedStories.length}</Btn>
+        </div>
+      </Modal>
 
       {/* Bulk delete: deliberately red/warning-themed so it can never be
           mistaken for the export dialog that launches from the same toolbar */}

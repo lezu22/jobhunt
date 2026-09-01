@@ -56,3 +56,8 @@ class StoryOrder(BaseModel):
 
 class BulkDeleteIn(BaseModel):
     ids: list[str]
+
+
+class BulkMoveIn(BaseModel):
+    ids: list[str]
+    category_id: Optional[int] = None  # null = move to uncategorised

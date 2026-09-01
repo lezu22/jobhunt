@@ -61,6 +61,7 @@ export const api = {
   revertStory:     (id)          => req('POST',   `/stories/${id}/revert`),
   deleteStory:     (id)          => req('DELETE', `/stories/${id}`),
   bulkDeleteStories:(ids)        => req('POST',   '/stories/bulk-delete', { ids }),
+  bulkMoveStories: (ids, categoryId) => req('POST', '/stories/bulk-move', { ids, category_id: categoryId }),
   reorderStories:  (categoryId, ids) => req('PUT', '/stories/order', { category_id: categoryId, ids }),
   getStoryLabels:  ()            => req('GET',    '/stories/labels'),
 }

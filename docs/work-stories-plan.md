@@ -275,8 +275,14 @@ anything that could not be executed.
   category". The step-7 export dialog will use the accent-green save theme
   with an editable filename field, so the two flows launched from the same
   multi-select toolbar cannot be confused. Category rename/delete live as
-  ✎/🗑 icons on the category header (rename never touches story links;
+  ✎ / red ✕ icons on the category header (rename never touches story links;
   category delete states how many stories move to Uncategorised).
+- **D21** (step 5 review) Multi-select toolbar also offers **Move to
+  category…** (neutral-themed dialog, category picker incl. Uncategorised)
+  backed by a transactional `POST /api/stories/bulk-move`: moved stories are
+  appended to the target bucket in index order, records already in the target
+  are skipped, a missing record rolls the whole move back, and nothing else
+  (labels, status, jobs, body) is touched.
 
 ## Future work (agreed out of current scope, schema kept safe for it)
 

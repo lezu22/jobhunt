@@ -426,6 +426,43 @@ def bulk_delete(ids: list[str]) -> int:
         conn.close()
 
 
+def bulk_move(ids: list[str], category_id) -> int:
+    """Move every listed story into one category bucket (None = uncategorised)
+    in a single transaction, appended after the bucket's existing stories in
+    the given order. Any missing story rolls the whole thing back."""
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        raise InvalidInput("no story ids given")
+    conn = _connect()
+    try:
+        conn.execute("BEGIN")
+        _validate_category(conn, category_id)
+        base = conn.execute(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM stories WHERE category_id IS ?",
+            (category_id,),
+        ).fetchone()[0]
+        now = _now()
+        moved = 0
+        for sid in ids:
+            row = conn.execute("SELECT category_id FROM stories WHERE id=?", (sid,)).fetchone()
+            if row is None:
+                raise NotFound(f"story {sid} not found")
+            if row["category_id"] == category_id:
+                continue  # already there; leave its position alone
+            conn.execute(
+                "UPDATE stories SET category_id=?, position=?, updated_at=? WHERE id=?",
+                (category_id, base + moved, now, sid),
+            )
+            moved += 1
+        conn.commit()
+        return moved
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def reorder_stories(category_id, ids: list[str]) -> None:
     """Set the order of one category bucket (category_id None = uncategorised).
     Must list every story in that bucket exactly once."""
