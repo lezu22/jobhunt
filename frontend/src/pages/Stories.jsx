@@ -29,12 +29,16 @@ function CategoryHeader({ name, count, collapsed, onToggle, onMoveUp, onMoveDown
         {count} {count === 1 ? 'entry' : 'entries'}
       </span>
       {(onMoveUp || onMoveDown) && (
-        <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}
+        <span style={{ marginLeft: 'auto', display: 'flex', margin: '-10px 0' }}
               onClick={e => e.stopPropagation()}>
           <span onClick={onMoveUp} title="Move category up"
-                style={{ cursor: onMoveUp ? 'pointer' : 'default', opacity: onMoveUp ? 0.6 : 0.15, fontFamily: 'var(--mono)', fontSize: 11 }}>▲</span>
+                style={{ cursor: onMoveUp ? 'pointer' : 'default', opacity: onMoveUp ? 0.7 : 0.15, fontFamily: 'var(--mono)', fontSize: 13, padding: '9px 10px', borderRadius: 4, userSelect: 'none' }}
+                onMouseEnter={e => { if (onMoveUp) e.target.style.background = 'var(--surface3)' }}
+                onMouseLeave={e => e.target.style.background = 'transparent'}>▲</span>
           <span onClick={onMoveDown} title="Move category down"
-                style={{ cursor: onMoveDown ? 'pointer' : 'default', opacity: onMoveDown ? 0.6 : 0.15, fontFamily: 'var(--mono)', fontSize: 11 }}>▼</span>
+                style={{ cursor: onMoveDown ? 'pointer' : 'default', opacity: onMoveDown ? 0.7 : 0.15, fontFamily: 'var(--mono)', fontSize: 13, padding: '9px 10px', borderRadius: 4, userSelect: 'none' }}
+                onMouseEnter={e => { if (onMoveDown) e.target.style.background = 'var(--surface3)' }}
+                onMouseLeave={e => e.target.style.background = 'transparent'}>▼</span>
         </span>
       )}
     </div>

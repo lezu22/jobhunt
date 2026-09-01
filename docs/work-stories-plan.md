@@ -261,6 +261,33 @@ anything that could not be executed.
   locally); step 2's PR #5 was merged during a brief flow detour ahead of
   review — its review is still owed, fixes go in before step 3.
 
+- **D18** (step 4 review) Status vocabulary (from the feature spec): `draft` =
+  story is being written / not yet trusted; `gap` = a known hole in the bank —
+  a question or theme that needs a story (or has only a weak one), kept
+  visible so prep work targets it; `ready` = interview-ready. Statuses are a
+  plain CHECK constraint, trivially renameable if this reading is wrong.
+- **D19** (step 4 review) Reorder arrows on cards and category headers got a
+  much larger padded hit area that swallows clicks (a near-miss no longer
+  expands the card), with hover highlight.
+
+## Future work (agreed out of current scope, schema kept safe for it)
+
+- **F1 — Questions as first-class shared records** (raised by Lucas during
+  step 4 review, 2026-09-01): a `questions` table plus a story↔question link
+  carrying score/note/position, so one question can be attached to several
+  stories and a question view can list every story answering it with scores.
+  Deferred until after step 8 because: (a) step 8's FTS search already
+  answers the mid-interview case across stories — matching question text
+  surfaces every story with its score, without normalising identity; (b) the
+  `question — Score: N/5` export line carries no stable question id, so
+  hand-edited/imported files would spawn near-duplicate question rows and
+  need a dedupe UX; (c) it would ripple through the import parser, staged
+  review, duplicate detection and export while they are being built.
+  Migration path stays clean: `CREATE TABLE questions` + get-or-create from
+  distinct `question_mappings.question` text, then swap the text column for
+  an FK — no data loss, one migration. Revisit once search is usable and we
+  can judge whether FTS alone covers the need.
+
 ## Open questions
 
 - **Q1 — RESOLVED 2026-08-31**: search mechanism confirmed by Lucas as SQLite

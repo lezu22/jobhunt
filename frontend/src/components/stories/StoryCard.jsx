@@ -51,12 +51,25 @@ export default function StoryCard({ story, jobsById, onMoveUp, onMoveDown }) {
           padding: '10px 14px', cursor: 'pointer', userSelect: 'none',
         }}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}
+        {/* Whole zone swallows clicks so a near-miss never expands the card */}
+        <div style={{ display: 'flex', flexDirection: 'column', margin: '-10px 0 -10px -8px', flexShrink: 0 }}
              onClick={e => e.stopPropagation()}>
           <span onClick={onMoveUp} title="Move up"
-                style={{ cursor: onMoveUp ? 'pointer' : 'default', opacity: onMoveUp ? 0.6 : 0.15, fontSize: 9, lineHeight: 1, fontFamily: 'var(--mono)' }}>▲</span>
+                style={{
+                  cursor: onMoveUp ? 'pointer' : 'default', opacity: onMoveUp ? 0.7 : 0.15,
+                  fontSize: 12, lineHeight: 1, fontFamily: 'var(--mono)',
+                  padding: '8px 9px 5px', borderRadius: 4, userSelect: 'none',
+                }}
+                onMouseEnter={e => { if (onMoveUp) e.target.style.background = 'var(--surface3)' }}
+                onMouseLeave={e => e.target.style.background = 'transparent'}>▲</span>
           <span onClick={onMoveDown} title="Move down"
-                style={{ cursor: onMoveDown ? 'pointer' : 'default', opacity: onMoveDown ? 0.6 : 0.15, fontSize: 9, lineHeight: 1, fontFamily: 'var(--mono)' }}>▼</span>
+                style={{
+                  cursor: onMoveDown ? 'pointer' : 'default', opacity: onMoveDown ? 0.7 : 0.15,
+                  fontSize: 12, lineHeight: 1, fontFamily: 'var(--mono)',
+                  padding: '5px 9px 8px', borderRadius: 4, userSelect: 'none',
+                }}
+                onMouseEnter={e => { if (onMoveDown) e.target.style.background = 'var(--surface3)' }}
+                onMouseLeave={e => e.target.style.background = 'transparent'}>▼</span>
         </div>
         <Chip bg={kind.bg} color={kind.color}>{kind.label}</Chip>
         <Link
