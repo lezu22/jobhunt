@@ -74,4 +74,5 @@ export const api = {
   importCommit: (records) => req('POST', '/stories/import/commit', { records }),
   exportStories: (ids, includeMetadata, filename) =>
     req('POST', '/stories/export', { ids, include_metadata: includeMetadata, filename }),
+  searchStories: (q) => req('GET', `/stories/search?q=${encodeURIComponent(q)}`),
 }

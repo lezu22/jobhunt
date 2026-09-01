@@ -171,8 +171,8 @@ re-runs the full backend suite, not just its own tests.
 | 4 | `stories-editor` | story/note view page: rendered markdown (react-markdown+remark-gfm), edit mode with sessionStorage draft buffer keyed by story id, dirty indicator, discard confirm, immediate metadata chip commits (visually separated from the draft-buffered body), save→previous_body, revert-to-previous; creation UI (new category, new story/note) since the index is read-only | 3 | refresh mid-edit keeps draft; save/cancel clears it; chip change survives cancel; revert works | exercise the edit flow yourself (draft survives refresh, cancel semantics, chip/body boundary feels clear); reply "go ahead with step 5" | merged (approved 2026-09-01 incl. arrow/chevron layout feedback) |
 | 5 | `stories-delete` | single delete confirm (names title, lists what goes with it); bulk delete: one dialog, per-row checkboxes all checked, count on the action button, visually distinct from export dialog; transactional backend path + rollback test | 4 | delete with rows unchecked removes only checked; forced mid-transaction failure deletes nothing | try single + bulk delete on seeded data, judge the two dialogs are not confusable; reply "go ahead with step 6" | merged (approved 2026-09-01 incl. red ✕, bulk move, toast fixes) |
 | 6 | `stories-import` | parser (H2 category, H3 title, `— Score: N/5` lifting, everything else verbatim incl. Caution lines, metadata-comment strip), upload validation (ext + UTF-8 + 2MB, retry flow), staged review screen: category resolution (create-new / map-to-existing), kind selection (no-mappings ⇒ note default), title edit, merge/split, per-record category, duplicate flagging (id ⇒ update default, title ⇒ create-new default, or skip), counts report | 2 (UI: 4) | import `story-bank.md`, verify counts + Caution lines in bodies; import twice, verify dup flow | import your real `story-bank.md`, check the staged review reads right (counts, categories, note defaults) before committing it; reply "go ahead with step 7" | merged (approved 2026-09-01 incl. cross-cat/body-similarity signals, 80% floor, side-by-side compare, bulk rules) |
-| 7 | `stories-export` | single + combined export: categories as `##` in user order (uncategorised last, empty categories skipped), titles as `###`, mappings back to `— Score: N/5` form, metadata HTML comment under each `###` (checkbox: default ON full export, OFF selection); export dialog shows the default filename in an editable field for confirm/change before download (Q3); round-trip tests | 6 | export-all → re-import → no drift, metadata stripped not duplicated; metadata-off round trip loses only meta fields | export your imported bank, diff it against the original by eye, confirm the filename edit field; reply "go ahead with step 8" | awaiting my review |
-| 8 | `stories-search` | search mechanism per Q1 decision (FTS5 confirmed), index title/body/question with question weighted highest, ranking = relevance, ties by score desc, question-matches above body-only; result rows show matching question + score; index filters (category/label/job/status/kind) + sorts + job-link UI | 2, 3 | "pushed back" finds the "push back on scope" story; no-result query behaves | search your own bank with real interviewer phrasings, judge the <10s find target and result ordering; reply "ready for final merge" or list misses | not started |
+| 7 | `stories-export` | single + combined export: categories as `##` in user order (uncategorised last, empty categories skipped), titles as `###`, mappings back to `— Score: N/5` form, metadata HTML comment under each `###` (checkbox: default ON full export, OFF selection); export dialog shows the default filename in an editable field for confirm/change before download (Q3); round-trip tests | 6 | export-all → re-import → no drift, metadata stripped not duplicated; metadata-off round trip loses only meta fields | export your imported bank, diff it against the original by eye, confirm the filename edit field; reply "go ahead with step 8" | merged (approved 2026-09-01) |
+| 8 | `stories-search` | search mechanism per Q1 decision (FTS5 confirmed), index title/body/question with question weighted highest, ranking = relevance, ties by score desc, question-matches above body-only; result rows show matching question + score; index filters (category/label/job/status/kind) + sorts + job-link UI | 2, 3 | "pushed back" finds the "push back on scope" story; no-result query behaves | search your own bank with real interviewer phrasings, judge the <10s find target and result ordering; reply "ready for final merge" or list misses | awaiting my review |
 | 9 | final merge | dedicated commit deleting this doc, then merge `feat/work-stories` → `main` | 1–8 | full verification pass (below) done and reported | read the verification report, approve the merge to main explicitly | not started |
 
 ## Verification pass (before final merge)
@@ -320,6 +320,19 @@ anything that could not be executed.
   imported (reported at import), question quotes are normalised away, `---`
   separators between sections live in bodies only if inside one, and score
   lines regroup after the body.
+
+- **D25** (step 8) Search ranking: every story whose QUESTION matched the
+  query counts as a relevance tie — bm25 deltas between short question texts
+  are length noise (a terse 2/5 question was outranking the 5/5 "push back on
+  scope" one), and the curated score exists precisely to pick the best option
+  live. So question matches order by score desc (bm25 breaks equal scores)
+  and body/title-only matches follow by bm25 (weights: question 8, title 4,
+  body 1; porter stemming; last query token prefix-matched for find-as-you-
+  type). FTS5 table `story_search` is kept in sync by six triggers, so every
+  write path (CRUD, import, bulk ops) is covered; `python3 -m stories.migrate
+  rebuild-search` re-indexes from scratch, and `up()` backfills a DB that
+  predates search. Reordering/story-arrows are disabled while filters or a
+  non-position sort are active (a reorder needs the full bucket).
 
 ## Future work (agreed out of current scope, schema kept safe for it)
 

@@ -65,10 +65,23 @@ function CategoryHeader({ name, count, collapsed, onToggle, onMoveUp, onMoveDown
   )
 }
 
+const filterSelStyle = {
+  background: 'var(--surface2)', border: '1px solid var(--border)',
+  color: 'var(--text)', padding: '7px 10px', borderRadius: 6,
+  fontSize: 12, outline: 'none',
+}
+
 export default function StoriesPage() {
   const [categories, setCategories] = useState(null)
   const [stories, setStories] = useState(null)
+  const [jobs, setJobs] = useState([])
+  const [labels, setLabels] = useState([])
   const [jobsById, setJobsById] = useState({})
+  const [filters, setFilters] = useState({ category: '', label: '', job: '', status: '', kind: '' })
+  const [sort, setSort] = useState('position')
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState(null)  // null = search inactive
+  const [searching, setSearching] = useState(false)
   const [collapsed, setCollapsed] = useState(() => new Set())
   const [toast, setToast] = useState(null)
   const [newCatOpen, setNewCatOpen] = useState(false)
@@ -86,17 +99,33 @@ export default function StoriesPage() {
 
   const load = () => Promise.all([
     api.getStoryCategories().then(setCategories),
-    api.getStories().then(setStories),
+    api.getStories({ ...filters, sort }).then(setStories),
+    api.getStoryLabels().then(setLabels).catch(() => {}),
   ]).catch(e => setToast({ type: 'error', message: `Load failed: ${e.message}` }))
 
+  useEffect(() => { load() }, [filters, sort])
+
   useEffect(() => {
-    load()
-    api.getTracker().then(jobs => {
+    api.getTracker().then(js => {
+      setJobs(js)
       const map = {}
-      jobs.forEach(j => { map[j.id] = j.company ? `${j.title} @ ${j.company}` : j.title })
+      js.forEach(j => { map[j.id] = j.company ? `${j.title} @ ${j.company}` : j.title })
       setJobsById(map)
     }).catch(() => {})
   }, [])
+
+  // Search: debounced, replaces the grouped view while a query is present
+  useEffect(() => {
+    if (!query.trim()) { setResults(null); setSearching(false); return }
+    setSearching(true)
+    const t = setTimeout(() => {
+      api.searchStories(query)
+        .then(setResults)
+        .catch(() => setResults([]))
+        .finally(() => setSearching(false))
+    }, 200)
+    return () => clearTimeout(t)
+  }, [query])
 
   // stories come position-sorted from the API; group them per bucket
   const byBucket = useMemo(() => {
@@ -147,6 +176,8 @@ export default function StoriesPage() {
   }
 
   // ordered sections: user-ordered categories, then Uncategorised always last
+  const filtersActive = Object.values(filters).some(Boolean)
+  const canReorder = !filtersActive && sort === 'position'
   const sections = [
     ...categories.map((c, i) => ({ key: c.id, name: c.name, index: i, isCat: true })),
     { key: UNCAT, name: 'Uncategorised', isCat: false },
@@ -226,8 +257,62 @@ export default function StoriesPage() {
           <Btn size="sm" variant="ghost" onClick={() => setExportAll(true)} disabled={!stories?.length}>⇓ Export all</Btn>
         </span>
       </div>
-      <div style={{ fontSize: 12, color: 'var(--text2)', margin: '-8px 0 24px' }}>
+      <div style={{ fontSize: 12, color: 'var(--text2)', margin: '-8px 0 16px' }}>
         {stories.length} entr{stories.length === 1 ? 'y' : 'ies'} across {categories.length} categor{categories.length === 1 ? 'y' : 'ies'} + uncategorised
+      </div>
+
+      {/* Search + filters */}
+      <div style={{
+        display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 20,
+        padding: '10px 12px', background: 'var(--surface)',
+        border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+      }}>
+        <input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="🔍 Search stories, bodies and interview questions… (stemmed: “pushed back” finds “push back”)"
+          style={{ ...filterSelStyle, flex: '1 1 320px', borderColor: query ? 'var(--accent)' : 'var(--border)' }}
+        />
+        {query ? (
+          <Btn size="sm" variant="ghost" onClick={() => setQuery('')}>✕ clear search</Btn>
+        ) : (
+          <>
+            <select value={filters.category} onChange={e => setFilters(f => ({ ...f, category: e.target.value }))} style={filterSelStyle}>
+              <option value="">all categories</option>
+              <option value="none">Uncategorised</option>
+              {categories.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+            </select>
+            <select value={filters.label} onChange={e => setFilters(f => ({ ...f, label: e.target.value }))} style={filterSelStyle}>
+              <option value="">all labels</option>
+              {labels.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+            </select>
+            <select value={filters.job} onChange={e => setFilters(f => ({ ...f, job: e.target.value }))} style={filterSelStyle}>
+              <option value="">all jobs</option>
+              {jobs.map(j => <option key={j.id} value={j.id}>{j.company ? `${j.title} @ ${j.company}` : j.title}</option>)}
+            </select>
+            <select value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))} style={filterSelStyle}>
+              <option value="">any status</option>
+              <option value="draft">draft</option>
+              <option value="gap">gap</option>
+              <option value="ready">ready</option>
+            </select>
+            <select value={filters.kind} onChange={e => setFilters(f => ({ ...f, kind: e.target.value }))} style={filterSelStyle}>
+              <option value="">stories + notes</option>
+              <option value="story">stories</option>
+              <option value="note">notes</option>
+            </select>
+            <select value={sort} onChange={e => setSort(e.target.value)} style={filterSelStyle} title="Order within each category">
+              <option value="position">my order</option>
+              <option value="updated">last edited</option>
+              <option value="title">title A–Z</option>
+            </select>
+            {(Object.values(filters).some(Boolean) || sort !== 'position') && (
+              <Btn size="sm" variant="ghost" onClick={() => { setFilters({ category: '', label: '', job: '', status: '', kind: '' }); setSort('position') }}>
+                reset
+              </Btn>
+            )}
+          </>
+        )}
       </div>
 
       {selected.size > 0 && (
@@ -250,9 +335,64 @@ export default function StoriesPage() {
         </div>
       )}
 
-      {sections.map(sec => {
+      {results !== null ? (
+        /* ── ranked search results ── */
+        <div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)', marginBottom: 12 }}>
+            {searching ? 'searching…' : `${results.length} result${results.length === 1 ? '' : 's'} — question matches first, then body/title matches`}
+          </div>
+          {!searching && results.length === 0 && (
+            <div style={{ fontSize: 13, color: 'var(--text2)', fontStyle: 'italic' }}>
+              Nothing matches “{query}”. Search is stemmed (pushed/push/pushing all match) — try fewer or different words.
+            </div>
+          )}
+          {results.map(s => (
+            <div key={s.id}
+                 onClick={() => navigate(`/stories/${s.id}`)}
+                 style={{
+                   background: 'var(--surface)', border: '1px solid var(--border)',
+                   borderRadius: 'var(--radius)', padding: '11px 14px', marginBottom: 8,
+                   cursor: 'pointer',
+                 }}
+                 onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent)'}
+                 onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 4, letterSpacing: '0.05em',
+                               background: s.kind === 'note' ? 'rgba(91,141,238,0.25)' : 'rgba(109,74,255,0.25)',
+                               color: s.kind === 'note' ? '#7ba7f2' : '#a78bfa' }}>
+                  {s.kind.toUpperCase()}
+                </span>
+                <span style={{ fontWeight: 700, fontSize: 13 }}>{s.title}</span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>
+                  {s.category_id == null ? 'Uncategorised' : categories.find(c => c.id === s.category_id)?.name}
+                  {' · '}{s.status}{s.nda_sensitive ? ' · ⚠ NDA' : ''}
+                </span>
+              </div>
+              <div style={{ marginTop: 6, fontSize: 12, display: 'flex', gap: 8, alignItems: 'baseline' }}>
+                {s.match.type === 'question' ? (
+                  <>
+                    <span style={{
+                      fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, flexShrink: 0,
+                      color: s.match.score == null ? 'var(--text3)'
+                        : s.match.score >= 4 ? 'var(--accent)'
+                        : s.match.score >= 2 ? 'var(--accent3)' : 'var(--danger)',
+                    }}>
+                      {s.match.score == null ? '–/5' : `${s.match.score}/5`}
+                    </span>
+                    <span>“{s.match.question}”{s.match.note && <span style={{ color: 'var(--text3)' }}> ({s.match.note})</span>}</span>
+                  </>
+                ) : (
+                  <span style={{ color: 'var(--text2)' }}>…{s.match.snippet}…</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+      sections.map(sec => {
         const bucket = byBucket[sec.key] || []
         const isCollapsed = collapsed.has(sec.key)
+        if (filtersActive && bucket.length === 0) return null
         return (
           <div key={sec.key} style={{ marginBottom: 26 }}>
             <CategoryHeader
@@ -260,8 +400,8 @@ export default function StoriesPage() {
               count={bucket.length}
               collapsed={isCollapsed}
               onToggle={() => toggle(sec.key)}
-              onMoveUp={sec.isCat && sec.index > 0 ? () => moveCategory(sec.index, -1) : null}
-              onMoveDown={sec.isCat && sec.index < categories.length - 1 ? () => moveCategory(sec.index, +1) : null}
+              onMoveUp={canReorder && sec.isCat && sec.index > 0 ? () => moveCategory(sec.index, -1) : null}
+              onMoveDown={canReorder && sec.isCat && sec.index < categories.length - 1 ? () => moveCategory(sec.index, +1) : null}
               onRename={sec.isCat ? () => { setCatName(sec.name); setCatAction({ mode: 'rename', cat: categories[sec.index] }) } : null}
               onDelete={sec.isCat ? () => setCatAction({ mode: 'delete', cat: categories[sec.index] }) : null}
             />
@@ -277,14 +417,15 @@ export default function StoriesPage() {
                   jobsById={jobsById}
                   selected={selected.has(s.id)}
                   onSelect={on => toggleSelect(s.id, on)}
-                  onMoveUp={i > 0 ? () => moveStory(sec.key, i, -1) : null}
-                  onMoveDown={i < bucket.length - 1 ? () => moveStory(sec.key, i, +1) : null}
+                  onMoveUp={canReorder && i > 0 ? () => moveStory(sec.key, i, -1) : null}
+                  onMoveDown={canReorder && i < bucket.length - 1 ? () => moveStory(sec.key, i, +1) : null}
                 />
               ))
             )}
           </div>
         )
-      })}
+      })
+      )}
 
       {/* Export: metadata default ON for a full export, OFF for a selection */}
       <ExportDialog
