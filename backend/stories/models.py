@@ -56,3 +56,34 @@ class StoryOrder(BaseModel):
 
 class BulkDeleteIn(BaseModel):
     ids: list[str]
+
+
+class BulkMoveIn(BaseModel):
+    ids: list[str]
+    category_id: Optional[int] = None  # null = move to uncategorised
+
+
+class ImportRecordIn(BaseModel):
+    """One reviewed record from the staged import screen."""
+    action: Literal["create", "update", "skip"]
+    target_story_id: Optional[str] = None  # required for update
+    title: str = ""
+    body: str = ""
+    kind: Kind = "note"
+    status: Status = "draft"
+    nda_sensitive: bool = False
+    category_id: Optional[int] = None       # resolved existing category…
+    new_category_name: Optional[str] = None  # …or a category to create (get-or-create by name)
+    labels: list[str] = []
+    job_ids: list[str] = []
+    mappings: list[MappingIn] = []
+
+
+class ImportCommitIn(BaseModel):
+    records: list[ImportRecordIn]
+
+
+class ExportIn(BaseModel):
+    ids: Optional[list[str]] = None      # None = export everything
+    include_metadata: bool = False
+    filename: Optional[str] = None       # user-confirmed name (Q3); server fills a default

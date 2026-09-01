@@ -7,7 +7,8 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        // JOBHUNT_API lets a dev server point at a scratch backend (demo scripts)
+        target: process.env.JOBHUNT_API || 'http://localhost:8000',
         changeOrigin: true,
       }
     }

@@ -7,6 +7,9 @@ import UrlsPage from './pages/Urls.jsx'
 import ScrapePage from './pages/Scrape.jsx'
 import ResultsPage from './pages/Results.jsx'
 import TrackerPage from './pages/Tracker.jsx'
+import StoriesPage from './pages/Stories.jsx'
+import StoryView from './pages/StoryView.jsx'
+import StoriesImport from './pages/StoriesImport.jsx'
 import { api } from './api.js'
 
 export default function App() {
@@ -49,6 +52,9 @@ export default function App() {
               <Route path="/scrape" element={<ScrapePage />} />
               <Route path="/results" element={<ResultsPage />} />
               <Route path="/tracker" element={<TrackerPage />} />
+              <Route path="/stories" element={<StoriesPage />} />
+              <Route path="/stories/import" element={<StoriesImport />} />
+              <Route path="/stories/:id" element={<StoryView />} />
             </Routes>
           </div>
         </main>

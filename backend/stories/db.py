@@ -5,6 +5,7 @@ Raw sqlite3 in the same style as database.py. Every connection enables
 foreign_keys so the schema's ON DELETE rules actually fire.
 """
 
+import re
 import sqlite3
 import uuid
 from datetime import datetime
@@ -347,7 +348,7 @@ def revert_story(sid: str) -> dict:
 
 def list_stories(category=None, label: Optional[str] = None, job: Optional[str] = None,
                  status: Optional[str] = None, kind: Optional[str] = None,
-                 sort: str = "position") -> list[dict]:
+                 question: Optional[str] = None, sort: str = "position") -> list[dict]:
     """category: None = all, 'none' = uncategorised bucket, or a category id."""
     where, params = [], []
     joins = ""
@@ -362,6 +363,9 @@ def list_stories(category=None, label: Optional[str] = None, job: Optional[str] 
     if job is not None:
         joins += " JOIN story_job_links fj ON fj.story_id = s.id"
         where.append("fj.job_id = ?"); params.append(job)
+    if question is not None:
+        joins += " JOIN question_mappings fq ON fq.story_id = s.id"
+        where.append("fq.question = ? COLLATE NOCASE"); params.append(question)
     if status is not None:
         where.append("s.status = ?"); params.append(status)
     if kind is not None:
@@ -419,6 +423,303 @@ def bulk_delete(ids: list[str]) -> int:
         _prune_orphan_labels(conn)
         conn.commit()
         return len(ids)
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def bulk_move(ids: list[str], category_id) -> int:
+    """Move every listed story into one category bucket (None = uncategorised)
+    in a single transaction, appended after the bucket's existing stories in
+    the given order. Any missing story rolls the whole thing back."""
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        raise InvalidInput("no story ids given")
+    conn = _connect()
+    try:
+        conn.execute("BEGIN")
+        _validate_category(conn, category_id)
+        base = conn.execute(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM stories WHERE category_id IS ?",
+            (category_id,),
+        ).fetchone()[0]
+        now = _now()
+        moved = 0
+        for sid in ids:
+            row = conn.execute("SELECT category_id FROM stories WHERE id=?", (sid,)).fetchone()
+            if row is None:
+                raise NotFound(f"story {sid} not found")
+            if row["category_id"] == category_id:
+                continue  # already there; leave its position alone
+            conn.execute(
+                "UPDATE stories SET category_id=?, position=?, updated_at=? WHERE id=?",
+                (category_id, base + moved, now, sid),
+            )
+            moved += 1
+        conn.commit()
+        return moved
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def list_questions() -> list[dict]:
+    """Every distinct question text in the bank (case-insensitive grouping),
+    with usage count and best score — feeds the editor's autocomplete so a
+    reused question keeps identical wording (and search groups it cleanly)."""
+    with _connect() as conn:
+        rows = conn.execute("""
+            SELECT MIN(question) AS question, COUNT(*) AS uses, MAX(score) AS best_score
+            FROM question_mappings
+            GROUP BY question COLLATE NOCASE
+            ORDER BY uses DESC, question COLLATE NOCASE
+        """).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ─── Search ──────────────────────────────────────────────────────────────────
+
+# bm25 column weights (title, body, question): question text highest per spec,
+# title above body. bm25 is a cost (lower = more relevant).
+SEARCH_WEIGHTS = (4.0, 1.0, 8.0)
+
+
+def search_stories(q: str) -> list[dict]:
+    """Stemmed token search over titles, bodies and question text.
+
+    Ranking: question-matching stories above body/title-only ones, then text
+    relevance (bm25), ties broken by mapping score descending. Each result
+    carries the specific best-matching question + score, or a body snippet.
+    """
+    tokens = re.findall(r"[A-Za-z0-9_]+", q)
+    if not tokens:
+        return []
+    # implicit AND; prefix-match the final token so partial words work mid-typing
+    if len(tokens[-1]) >= 2:
+        tokens[-1] += "*"
+    match = " ".join(tokens)
+    with _connect() as conn:
+        try:
+            rows = conn.execute(
+                "SELECT story_id, mapping_id,"
+                f" bm25(story_search, {SEARCH_WEIGHTS[0]}, {SEARCH_WEIGHTS[1]}, {SEARCH_WEIGHTS[2]}) AS rank,"
+                " snippet(story_search, 1, '', '', '…', 14) AS snip"
+                " FROM story_search WHERE story_search MATCH ?"
+                " ORDER BY rank",
+                (match,),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []  # degenerate MATCH input
+        best_question: dict[str, dict] = {}  # story_id -> best question row
+        best_any: dict[str, dict] = {}       # story_id -> best row overall
+        for r in rows:
+            sid = r["story_id"]
+            if sid not in best_any:
+                best_any[sid] = dict(r)
+            if r["mapping_id"] is not None and sid not in best_question:
+                best_question[sid] = dict(r)
+        results = []
+        for sid, info in best_any.items():
+            story = _full_story(conn, sid)
+            qrow = best_question.get(sid)
+            m = None
+            if qrow is not None:
+                m = next((mm for mm in story["mappings"] if mm["id"] == qrow["mapping_id"]), None)
+            story["match"] = {
+                "type": "question" if m else "content",
+                "question": m["question"] if m else None,
+                "score": m["score"] if m else None,
+                "note": m.get("note") if m else None,
+                "snippet": None if m else info["snip"],
+                "rank": info["rank"],
+            }
+            results.append(story)
+    # D25: every story whose QUESTION matched the query counts as a relevance
+    # tie — bm25 deltas between short question texts are length noise, and the
+    # curated score exists precisely to pick the best option live. So question
+    # matches order by score desc (bm25 only breaks equal scores), and
+    # body/title-only matches follow, ordered by bm25.
+    def key(s):
+        m = s["match"]
+        if m["type"] == "question":
+            return (0, -(m["score"] if m["score"] is not None else -1), m["rank"])
+        return (1, 0, m["rank"])
+
+    results.sort(key=key)
+    return results
+
+
+# ─── Import ──────────────────────────────────────────────────────────────────
+
+BODY_SIM_THRESHOLD = 0.80  # only surface near-duplicates (user-set floor; edited copies land 80-95%)
+BODY_SIM_TOP = 3
+
+
+def stage_import(parsed: dict) -> dict:
+    """Enrich parser output with read-only duplicate/category matches from the
+    DB — exact-id matches, normalised-title matches (all categories, the UI
+    scopes the strong flag), and body-text similarity. Commits nothing."""
+    from .parser import normalise_title, shingles, similarity
+    with _connect() as conn:
+        cat_info = []
+        for name in parsed["categories"]:
+            row = conn.execute(
+                "SELECT id, name FROM story_categories WHERE name = ?", (name,)
+            ).fetchone()  # column is COLLATE NOCASE
+            cat_info.append({
+                "name": name,
+                "match": dict(row) if row else None,
+                "record_count": sum(1 for r in parsed["records"] if r["category"] == name),
+            })
+        parsed["categories"] = cat_info
+
+        existing = conn.execute("SELECT id, title, category_id, body FROM stories").fetchall()
+        by_norm: dict[str, list] = {}
+        by_id = {r["id"]: r for r in existing}
+        body_sh = {r["id"]: shingles(r["body"]) for r in existing}
+        for r in existing:
+            by_norm.setdefault(normalise_title(r["title"]), []).append(r)
+        for rec in parsed["records"]:
+            rec_sh = shingles(rec["body"])
+            sim = lambda sid: round(similarity(rec_sh, body_sh[sid]), 2)
+            meta_id = (rec.get("meta") or {}).get("id")
+            hit = by_id.get(meta_id)
+            rec["dup_id_match"] = (
+                {"story_id": hit["id"], "title": hit["title"],
+                 "category_id": hit["category_id"], "similarity": sim(hit["id"])}
+                if hit else None
+            )
+            rec["dup_title_matches"] = [
+                {"story_id": r["id"], "title": r["title"],
+                 "category_id": r["category_id"], "similarity": sim(r["id"])}
+                for r in by_norm.get(normalise_title(rec["title"]), [])
+            ]
+            titled = {m["story_id"] for m in rec["dup_title_matches"]}
+            scored = sorted(
+                ((similarity(rec_sh, sh), sid) for sid, sh in body_sh.items() if sid not in titled),
+                reverse=True,
+            )
+            rec["body_matches"] = [
+                {"story_id": sid, "title": by_id[sid]["title"],
+                 "category_id": by_id[sid]["category_id"], "similarity": round(s, 2)}
+                for s, sid in scored[:BODY_SIM_TOP] if s >= BODY_SIM_THRESHOLD
+            ]
+    return parsed
+
+
+def _import_job_links(conn, sid: str, job_ids: list[str]) -> int:
+    """Like _set_job_links but silently drops unknown jobs (a job named in an
+    old export may have been deleted since). Returns how many were dropped."""
+    conn.execute("DELETE FROM story_job_links WHERE story_id=?", (sid,))
+    dropped = 0
+    for j in dict.fromkeys(job_ids):
+        if conn.execute("SELECT 1 FROM tracked_jobs WHERE id=?", (j,)).fetchone():
+            conn.execute("INSERT INTO story_job_links (story_id, job_id) VALUES (?, ?)", (sid, j))
+        else:
+            dropped += 1
+    return dropped
+
+
+def import_commit(records: list[dict]) -> dict:
+    """Apply reviewed import decisions in ONE transaction. Any failure rolls
+    back the entire import and names the offending record."""
+    if not records:
+        raise InvalidInput("nothing to import")
+    conn = _connect()
+    try:
+        conn.execute("BEGIN")
+        created = updated = skipped = dropped_links = 0
+        cats_created: list[str] = []
+        cat_cache: dict[str, int] = {}  # casefolded name -> id
+
+        def resolve_category(rec) -> int | None:
+            if rec.get("category_id") is not None:
+                if not conn.execute(
+                    "SELECT 1 FROM story_categories WHERE id=?", (rec["category_id"],)
+                ).fetchone():
+                    raise InvalidInput(f"record '{rec['title']}': unknown category id {rec['category_id']}")
+                return rec["category_id"]
+            name = (rec.get("new_category_name") or "").strip()
+            if not name:
+                return None
+            key = name.casefold()
+            if key in cat_cache:
+                return cat_cache[key]
+            row = conn.execute("SELECT id FROM story_categories WHERE name = ?", (name,)).fetchone()
+            if row:
+                cat_cache[key] = row["id"]
+                return row["id"]
+            pos = conn.execute("SELECT COALESCE(MAX(position), -1) + 1 FROM story_categories").fetchone()[0]
+            cid = conn.execute(
+                "INSERT INTO story_categories (name, position, created_at) VALUES (?, ?, ?)",
+                (name, pos, _now()),
+            ).lastrowid
+            cat_cache[key] = cid
+            cats_created.append(name)
+            return cid
+
+        for rec in records:
+            action = rec["action"]
+            if action == "skip":
+                skipped += 1
+                continue
+            title = rec["title"].strip()
+            if not title:
+                raise InvalidInput("a record has an empty title")
+            if not rec["body"].strip():
+                raise InvalidInput(f"record '{title}': body is empty or whitespace-only")
+            if rec["kind"] == "note" and rec["mappings"]:
+                raise InvalidInput(f"record '{title}': notes cannot have question mappings")
+            cid = resolve_category(rec)
+            now = _now()
+
+            if action == "update":
+                sid = rec.get("target_story_id")
+                old = conn.execute("SELECT body FROM stories WHERE id=?", (sid,)).fetchone()
+                if old is None:
+                    raise NotFound(f"record '{title}': target story {sid} not found")
+                # keep position unless the category changes
+                cur_cat = conn.execute("SELECT category_id FROM stories WHERE id=?", (sid,)).fetchone()[0]
+                if cur_cat != cid:
+                    newpos = conn.execute(
+                        "SELECT COALESCE(MAX(position), -1) + 1 FROM stories WHERE category_id IS ?", (cid,)
+                    ).fetchone()[0]
+                    conn.execute("UPDATE stories SET position=? WHERE id=?", (newpos, sid))
+                conn.execute(
+                    "UPDATE stories SET title=?, previous_body=body, body=?, kind=?,"
+                    " category_id=?, status=?, nda_sensitive=?, updated_at=? WHERE id=?",
+                    (title, rec["body"], rec["kind"], cid, rec["status"],
+                     int(rec["nda_sensitive"]), now, sid),
+                )
+                updated += 1
+            else:  # create
+                sid = uuid.uuid4().hex
+                pos = conn.execute(
+                    "SELECT COALESCE(MAX(position), -1) + 1 FROM stories WHERE category_id IS ?", (cid,)
+                ).fetchone()[0]
+                conn.execute(
+                    "INSERT INTO stories (id, title, body, kind, category_id, status,"
+                    " nda_sensitive, position, created_at, updated_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (sid, title, rec["body"], rec["kind"], cid, rec["status"],
+                     int(rec["nda_sensitive"]), pos, now, now),
+                )
+                created += 1
+
+            _set_mappings(conn, sid, rec["mappings"])
+            _set_labels(conn, sid, rec["labels"])
+            dropped_links += _import_job_links(conn, sid, rec["job_ids"])
+
+        _prune_orphan_labels(conn)
+        conn.commit()
+        return {
+            "created": created, "updated": updated, "skipped": skipped,
+            "categories_created": cats_created, "dropped_job_links": dropped_links,
+        }
     except BaseException:
         conn.rollback()
         raise

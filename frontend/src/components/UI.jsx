@@ -1,4 +1,5 @@
 // Shared UI components
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 export function Btn({ children, variant = 'primary', size = 'md', onClick, disabled, style = {} }) {
@@ -187,11 +188,27 @@ export function Modal({ open, onClose, title, children, width = 560 }) {
   )
 }
 
-export function Toast({ message, type = 'success', onClose }) {
+export function Toast({ message, type = 'success', onClose, sticky }) {
   const color = type === 'error' ? 'var(--danger)' : type === 'warn' ? 'var(--accent3)' : 'var(--accent)'
-  return (
+  // Informational toasts hold 3s then fade over 2s; errors stay until
+  // dismissed so a failure can't slip by unnoticed. ✕ always closes instantly.
+  const stay = sticky ?? (type === 'error')
+  const [fading, setFading] = useState(false)
+  useEffect(() => {
+    setFading(false)
+    if (stay) return
+    const hold = setTimeout(() => setFading(true), 3000)
+    const gone = setTimeout(onClose, 5000)
+    return () => { clearTimeout(hold); clearTimeout(gone) }
+  }, [message, type, stay])
+  // Portaled into <body> for the same reason as Modal: page content lives in
+  // its own stacking context (z-index 1), so an in-tree toast would sit under
+  // the modal overlay no matter how high its own z-index is.
+  return createPortal(
     <div style={{
-      position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
+      opacity: fading ? 0 : 1,
+      transition: 'opacity 2s ease',
+      position: 'fixed', top: 24, right: 24, zIndex: 9999,
       background: 'var(--surface)', border: `1px solid ${color}`,
       borderRadius: 8, padding: '12px 18px',
       fontFamily: 'var(--mono)', fontSize: 12, color,
@@ -202,6 +219,7 @@ export function Toast({ message, type = 'success', onClose }) {
     }}>
       {message}
       <span onClick={onClose} style={{ cursor: 'pointer', marginLeft: 'auto', opacity: 0.6 }}>✕</span>
-    </div>
+    </div>,
+    document.body
   )
 }

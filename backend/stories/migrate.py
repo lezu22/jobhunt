@@ -20,8 +20,10 @@ import database
 
 DEFAULT_DB = database.DB_PATH  # honours the JOBHUNT_DB env override
 
-# Drop order: children before parents.
+# Drop order: children before parents. (Triggers on stories/question_mappings
+# are dropped automatically with their tables.)
 STORY_TABLES = [
+    "story_search",
     "story_job_links",
     "story_label_links",
     "labels",
@@ -90,12 +92,79 @@ SCHEMA = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_story_job_links_job ON story_job_links(job_id)",
+    # ── Search (Q1: FTS5, porter stemming). One row per story (title+body)
+    #    plus one row per question mapping; kept in sync by triggers so every
+    #    write path (CRUD, import, bulk ops) is covered without app code.
+    """
+    CREATE VIRTUAL TABLE IF NOT EXISTS story_search USING fts5(
+        title, body, question,
+        story_id UNINDEXED, mapping_id UNINDEXED,
+        tokenize='porter unicode61'
+    )
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS story_search_story_ai AFTER INSERT ON stories BEGIN
+        INSERT INTO story_search (title, body, question, story_id, mapping_id)
+        VALUES (new.title, new.body, '', new.id, NULL);
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS story_search_story_au AFTER UPDATE ON stories BEGIN
+        DELETE FROM story_search WHERE story_id = old.id AND mapping_id IS NULL;
+        INSERT INTO story_search (title, body, question, story_id, mapping_id)
+        VALUES (new.title, new.body, '', new.id, NULL);
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS story_search_story_ad AFTER DELETE ON stories BEGIN
+        DELETE FROM story_search WHERE story_id = old.id;
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS story_search_qm_ai AFTER INSERT ON question_mappings BEGIN
+        INSERT INTO story_search (title, body, question, story_id, mapping_id)
+        VALUES ('', '', new.question, new.story_id, new.id);
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS story_search_qm_au AFTER UPDATE ON question_mappings BEGIN
+        DELETE FROM story_search WHERE mapping_id = old.id;
+        INSERT INTO story_search (title, body, question, story_id, mapping_id)
+        VALUES ('', '', new.question, new.story_id, new.id);
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS story_search_qm_ad AFTER DELETE ON question_mappings BEGIN
+        DELETE FROM story_search WHERE mapping_id = old.id;
+    END
+    """,
 ]
 
 
+def rebuild_search(conn: sqlite3.Connection) -> int:
+    """Repopulate the FTS table from scratch (also the first-run backfill)."""
+    conn.execute("DELETE FROM story_search")
+    conn.execute(
+        "INSERT INTO story_search (title, body, question, story_id, mapping_id)"
+        " SELECT title, body, '', id, NULL FROM stories"
+    )
+    conn.execute(
+        "INSERT INTO story_search (title, body, question, story_id, mapping_id)"
+        " SELECT '', '', question, story_id, id FROM question_mappings"
+    )
+    n = conn.execute("SELECT COUNT(*) FROM story_search").fetchone()[0]
+    conn.commit()
+    return n
+
+
 def up(conn: sqlite3.Connection) -> None:
+    had_fts = bool(conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='story_search'"
+    ).fetchone())
     for stmt in SCHEMA:
         conn.execute(stmt)
+    if not had_fts:
+        rebuild_search(conn)  # backfill DBs that predate search
     conn.commit()
 
 
@@ -144,7 +213,7 @@ def print_status(conn: sqlite3.Connection, db: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["up", "down", "status"])
+    parser.add_argument("action", choices=["up", "down", "status", "rebuild-search"])
     parser.add_argument("--db", type=Path, default=DEFAULT_DB)
     args = parser.parse_args()
 
@@ -156,6 +225,8 @@ def main() -> None:
         elif args.action == "down":
             down(conn)
             print(f"down OK: {args.db}")
+        elif args.action == "rebuild-search":
+            print(f"rebuild-search OK: {rebuild_search(conn)} rows indexed")
         print_status(conn, args.db)
     finally:
         conn.close()

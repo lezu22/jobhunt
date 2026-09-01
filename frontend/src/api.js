@@ -41,4 +41,39 @@ export const api = {
 
   // Stats
   getStats: () => req('GET', '/stats'),
+
+  // Work Stories: categories
+  getStoryCategories:    ()         => req('GET',    '/stories/categories'),
+  createStoryCategory:   (name)     => req('POST',   '/stories/categories', { name }),
+  renameStoryCategory:   (id, name) => req('PATCH',  `/stories/categories/${id}`, { name }),
+  deleteStoryCategory:   (id)       => req('DELETE', `/stories/categories/${id}`),
+  reorderStoryCategories:(ids)      => req('PUT',    '/stories/categories/order', { ids }),
+
+  // Work Stories: stories/notes
+  getStories:      (params = {}) => {
+    const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+    const s = q.toString()
+    return req('GET', `/stories${s ? `?${s}` : ''}`)
+  },
+  getStory:        (id)          => req('GET',    `/stories/${id}`),
+  createStory:     (data)        => req('POST',   '/stories', data),
+  updateStory:     (id, data)    => req('PATCH',  `/stories/${id}`, data),
+  revertStory:     (id)          => req('POST',   `/stories/${id}/revert`),
+  deleteStory:     (id)          => req('DELETE', `/stories/${id}`),
+  bulkDeleteStories:(ids)        => req('POST',   '/stories/bulk-delete', { ids }),
+  bulkMoveStories: (ids, categoryId) => req('POST', '/stories/bulk-move', { ids, category_id: categoryId }),
+  reorderStories:  (categoryId, ids) => req('PUT', '/stories/order', { category_id: categoryId, ids }),
+  getStoryLabels:  ()            => req('GET',    '/stories/labels'),
+  importParse: async (file) => {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch(`${BASE}/stories/import/parse`, { method: 'POST', body: form })
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
+    return res.json()
+  },
+  importCommit: (records) => req('POST', '/stories/import/commit', { records }),
+  exportStories: (ids, includeMetadata, filename) =>
+    req('POST', '/stories/export', { ids, include_metadata: includeMetadata, filename }),
+  searchStories: (q) => req('GET', `/stories/search?q=${encodeURIComponent(q)}`),
+  getKnownQuestions: () => req('GET', '/stories/questions'),
 }
