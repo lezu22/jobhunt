@@ -465,7 +465,7 @@ def bulk_move(ids: list[str], category_id) -> int:
 
 # ─── Import ──────────────────────────────────────────────────────────────────
 
-BODY_SIM_THRESHOLD = 0.35  # report body matches at/above this Jaccard score
+BODY_SIM_THRESHOLD = 0.80  # only surface near-duplicates (user-set floor; edited copies land 80-95%)
 BODY_SIM_TOP = 3
 
 

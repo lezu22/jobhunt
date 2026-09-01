@@ -299,7 +299,7 @@ anything that could not be executed.
   indicator naming that category; (3) **body-text similarity** — word-shingle
   overlap coefficient (stdlib, containment-friendly so a short note scores
   100% against a longer story holding the same prose) — reported as a
-  percentage against the top 3 existing records ≥ 35%. Any signal enables
+  percentage against the top 3 existing records ≥ 80% (Lucas-set floor: high enough to be a near-duplicate, low enough to still catch an edited copy), each with an expandable side-by-side comparison of incoming vs existing body. Any signal enables
   update/create/skip (create default unless id match), and when several
   records could be the update target an explicit labelled target picker
   chooses between them. Import commit is one transaction; job links

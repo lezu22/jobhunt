@@ -167,7 +167,7 @@ class TestImportEndpoints:
         # body similarity surfaces the same-text record even with a different title
         assert similar in [m["story_id"] for m in tracer["body_matches"]]
         top = next(m for m in tracer["body_matches"] if m["story_id"] == similar)
-        assert top["similarity"] >= 0.35
+        assert top["similarity"] >= 0.80
         # an unrelated record reports no body matches
         intro = next(r for r in p["records"] if r["title"] == "Opening framing")
         assert intro["body_matches"] == []

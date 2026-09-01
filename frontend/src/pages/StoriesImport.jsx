@@ -36,6 +36,17 @@ export default function StoriesImport() {
   const [toast, setToast] = useState(null)
   const [committing, setCommitting] = useState(false)
   const [done, setDone] = useState(null)         // commit result
+  const [existingCache, setExistingCache] = useState({})  // story_id -> full record, for side-by-side
+
+  const toggleCompare = (key, storyId) => {
+    setRecords(rs => rs.map(r => r.key === key
+      ? { ...r, compareId: r.compareId === storyId ? null : storyId } : r))
+    if (storyId && !existingCache[storyId]) {
+      api.getStory(storyId)
+        .then(s => setExistingCache(c => ({ ...c, [storyId]: s })))
+        .catch(() => setExistingCache(c => ({ ...c, [storyId]: { title: '(failed to load)', body: '' } })))
+    }
+  }
 
   const pickFile = () => fileRef.current?.click()
 
@@ -323,12 +334,22 @@ export default function StoriesImport() {
           const titleDup = titleDupFor(r, cat)
           const flagged = r.dupId || titleDup
           const softSignals = [
-            ...r.dupTitles.filter(d => d !== titleDup).map(d =>
-              `same title exists in ${catName(d.category_id)} (body ${pct(d.similarity)} similar)`),
-            ...r.bodyMatches.map(b =>
-              `body ${pct(b.similarity)} similar to “${b.title}” (${catName(b.category_id)})`),
+            ...r.dupTitles.filter(d => d !== titleDup).map(d => ({
+              id: d.story_id,
+              text: `same title exists in ${catName(d.category_id)} (body ${pct(d.similarity)} similar)`,
+            })),
+            ...r.bodyMatches.map(b => ({
+              id: b.story_id,
+              text: `body ${pct(b.similarity)} similar to “${b.title}” (${catName(b.category_id)})`,
+            })),
           ]
           const cands = updateCandidates(r, cat)
+          const compareLink = (storyId) => (
+            <span onClick={() => toggleCompare(r.key, storyId)}
+                  style={{ ...mono, fontSize: 10, color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline' }}>
+              {r.compareId === storyId ? 'hide comparison' : '⇄ compare'}
+            </span>
+          )
           return (
             <div key={r.key} style={{
               border: `1px solid ${r.drop ? 'var(--border)' : flagged ? 'var(--accent3)' : 'var(--border2)'}`,
@@ -366,6 +387,7 @@ export default function StoriesImport() {
                       ⚠ {r.dupId
                         ? <>metadata id matches existing “{r.dupId.title}”</>
                         : <>title matches existing “{titleDup.title}” in the same category (body {pct(titleDup.similarity)} similar)</>}
+                      {compareLink((r.dupId ?? titleDup).story_id)}
                       <select value={r.dupChoice} onChange={e => upd(r.key, { dupChoice: e.target.value })} style={{ ...inputStyle, padding: '4px 8px' }}>
                         <option value="update">update the existing record</option>
                         <option value="create">create as new</option>
@@ -374,8 +396,29 @@ export default function StoriesImport() {
                     </div>
                   )}
                   {softSignals.map((s, i) => (
-                    <div key={i} style={{ color: '#a78bfa' }}>◎ {s}</div>
+                    <div key={i} style={{ color: '#a78bfa', display: 'flex', gap: 8, alignItems: 'center' }}>
+                      ◎ {s.text} {compareLink(s.id)}
+                    </div>
                   ))}
+                  {r.compareId && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+                      {[
+                        { head: 'INCOMING (this file)', body: r.body, sub: r.title },
+                        { head: 'EXISTING', body: existingCache[r.compareId]?.body ?? 'loading…',
+                          sub: existingCache[r.compareId]
+                            ? `${existingCache[r.compareId].title} (${catName(existingCache[r.compareId].category_id)})` : '' },
+                      ].map((col, i) => (
+                        <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
+                          <div style={{ ...mono, fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', padding: '5px 9px', background: 'var(--surface3)', color: i === 0 ? 'var(--accent)' : 'var(--accent2)' }}>
+                            {col.head}{col.sub ? ` — ${col.sub}` : ''}
+                          </div>
+                          <pre style={{ margin: 0, padding: 10, fontSize: 11, fontFamily: 'var(--mono)', whiteSpace: 'pre-wrap', maxHeight: 260, overflowY: 'auto', color: 'var(--text)' }}>
+                            {col.body}
+                          </pre>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {!flagged && softSignals.length > 0 && (
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center', color: 'var(--text2)', flexWrap: 'wrap' }}>
                       possible duplicate —
