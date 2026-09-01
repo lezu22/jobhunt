@@ -463,6 +463,160 @@ def bulk_move(ids: list[str], category_id) -> int:
         conn.close()
 
 
+# ─── Import ──────────────────────────────────────────────────────────────────
+
+def stage_import(parsed: dict) -> dict:
+    """Enrich parser output with read-only duplicate/category matches from the
+    DB. Commits nothing."""
+    from .parser import normalise_title
+    with _connect() as conn:
+        cat_info = []
+        for name in parsed["categories"]:
+            row = conn.execute(
+                "SELECT id, name FROM story_categories WHERE name = ?", (name,)
+            ).fetchone()  # column is COLLATE NOCASE
+            cat_info.append({
+                "name": name,
+                "match": dict(row) if row else None,
+                "record_count": sum(1 for r in parsed["records"] if r["category"] == name),
+            })
+        parsed["categories"] = cat_info
+
+        existing = conn.execute("SELECT id, title, category_id FROM stories").fetchall()
+        by_norm: dict[str, list] = {}
+        by_id = {r["id"]: r for r in existing}
+        for r in existing:
+            by_norm.setdefault(normalise_title(r["title"]), []).append(r)
+        for rec in parsed["records"]:
+            meta_id = (rec.get("meta") or {}).get("id")
+            hit = by_id.get(meta_id)
+            rec["dup_id_match"] = (
+                {"story_id": hit["id"], "title": hit["title"], "category_id": hit["category_id"]}
+                if hit else None
+            )
+            rec["dup_title_matches"] = [
+                {"story_id": r["id"], "title": r["title"], "category_id": r["category_id"]}
+                for r in by_norm.get(normalise_title(rec["title"]), [])
+            ]
+    return parsed
+
+
+def _import_job_links(conn, sid: str, job_ids: list[str]) -> int:
+    """Like _set_job_links but silently drops unknown jobs (a job named in an
+    old export may have been deleted since). Returns how many were dropped."""
+    conn.execute("DELETE FROM story_job_links WHERE story_id=?", (sid,))
+    dropped = 0
+    for j in dict.fromkeys(job_ids):
+        if conn.execute("SELECT 1 FROM tracked_jobs WHERE id=?", (j,)).fetchone():
+            conn.execute("INSERT INTO story_job_links (story_id, job_id) VALUES (?, ?)", (sid, j))
+        else:
+            dropped += 1
+    return dropped
+
+
+def import_commit(records: list[dict]) -> dict:
+    """Apply reviewed import decisions in ONE transaction. Any failure rolls
+    back the entire import and names the offending record."""
+    if not records:
+        raise InvalidInput("nothing to import")
+    conn = _connect()
+    try:
+        conn.execute("BEGIN")
+        created = updated = skipped = dropped_links = 0
+        cats_created: list[str] = []
+        cat_cache: dict[str, int] = {}  # casefolded name -> id
+
+        def resolve_category(rec) -> int | None:
+            if rec.get("category_id") is not None:
+                if not conn.execute(
+                    "SELECT 1 FROM story_categories WHERE id=?", (rec["category_id"],)
+                ).fetchone():
+                    raise InvalidInput(f"record '{rec['title']}': unknown category id {rec['category_id']}")
+                return rec["category_id"]
+            name = (rec.get("new_category_name") or "").strip()
+            if not name:
+                return None
+            key = name.casefold()
+            if key in cat_cache:
+                return cat_cache[key]
+            row = conn.execute("SELECT id FROM story_categories WHERE name = ?", (name,)).fetchone()
+            if row:
+                cat_cache[key] = row["id"]
+                return row["id"]
+            pos = conn.execute("SELECT COALESCE(MAX(position), -1) + 1 FROM story_categories").fetchone()[0]
+            cid = conn.execute(
+                "INSERT INTO story_categories (name, position, created_at) VALUES (?, ?, ?)",
+                (name, pos, _now()),
+            ).lastrowid
+            cat_cache[key] = cid
+            cats_created.append(name)
+            return cid
+
+        for rec in records:
+            action = rec["action"]
+            if action == "skip":
+                skipped += 1
+                continue
+            title = rec["title"].strip()
+            if not title:
+                raise InvalidInput("a record has an empty title")
+            if not rec["body"].strip():
+                raise InvalidInput(f"record '{title}': body is empty or whitespace-only")
+            if rec["kind"] == "note" and rec["mappings"]:
+                raise InvalidInput(f"record '{title}': notes cannot have question mappings")
+            cid = resolve_category(rec)
+            now = _now()
+
+            if action == "update":
+                sid = rec.get("target_story_id")
+                old = conn.execute("SELECT body FROM stories WHERE id=?", (sid,)).fetchone()
+                if old is None:
+                    raise NotFound(f"record '{title}': target story {sid} not found")
+                # keep position unless the category changes
+                cur_cat = conn.execute("SELECT category_id FROM stories WHERE id=?", (sid,)).fetchone()[0]
+                if cur_cat != cid:
+                    newpos = conn.execute(
+                        "SELECT COALESCE(MAX(position), -1) + 1 FROM stories WHERE category_id IS ?", (cid,)
+                    ).fetchone()[0]
+                    conn.execute("UPDATE stories SET position=? WHERE id=?", (newpos, sid))
+                conn.execute(
+                    "UPDATE stories SET title=?, previous_body=body, body=?, kind=?,"
+                    " category_id=?, status=?, nda_sensitive=?, updated_at=? WHERE id=?",
+                    (title, rec["body"], rec["kind"], cid, rec["status"],
+                     int(rec["nda_sensitive"]), now, sid),
+                )
+                updated += 1
+            else:  # create
+                sid = uuid.uuid4().hex
+                pos = conn.execute(
+                    "SELECT COALESCE(MAX(position), -1) + 1 FROM stories WHERE category_id IS ?", (cid,)
+                ).fetchone()[0]
+                conn.execute(
+                    "INSERT INTO stories (id, title, body, kind, category_id, status,"
+                    " nda_sensitive, position, created_at, updated_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (sid, title, rec["body"], rec["kind"], cid, rec["status"],
+                     int(rec["nda_sensitive"]), pos, now, now),
+                )
+                created += 1
+
+            _set_mappings(conn, sid, rec["mappings"])
+            _set_labels(conn, sid, rec["labels"])
+            dropped_links += _import_job_links(conn, sid, rec["job_ids"])
+
+        _prune_orphan_labels(conn)
+        conn.commit()
+        return {
+            "created": created, "updated": updated, "skipped": skipped,
+            "categories_created": cats_created, "dropped_job_links": dropped_links,
+        }
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def reorder_stories(category_id, ids: list[str]) -> None:
     """Set the order of one category bucket (category_id None = uncategorised).
     Must list every story in that bucket exactly once."""

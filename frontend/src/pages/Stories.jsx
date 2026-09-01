@@ -219,6 +219,7 @@ export default function StoriesPage() {
           <Btn size="sm" onClick={() => navigate('/stories/new?kind=story')}>+ Story</Btn>
           <Btn size="sm" variant="secondary" onClick={() => navigate('/stories/new?kind=note')}>+ Note</Btn>
           <Btn size="sm" variant="ghost" onClick={() => setNewCatOpen(true)}>+ Category</Btn>
+          <Btn size="sm" variant="ghost" onClick={() => navigate('/stories/import')}>⇪ Import</Btn>
         </span>
       </div>
       <div style={{ fontSize: 12, color: 'var(--text2)', margin: '-8px 0 24px' }}>
