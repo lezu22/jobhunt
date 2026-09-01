@@ -81,3 +81,9 @@ class ImportRecordIn(BaseModel):
 
 class ImportCommitIn(BaseModel):
     records: list[ImportRecordIn]
+
+
+class ExportIn(BaseModel):
+    ids: Optional[list[str]] = None      # None = export everything
+    include_metadata: bool = False
+    filename: Optional[str] = None       # user-confirmed name (Q3); server fills a default

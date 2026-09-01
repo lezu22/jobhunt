@@ -7,9 +7,9 @@ Static paths (categories, labels, order, bulk-delete) are declared before the
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from . import db, parser
+from . import db, exporter, parser
 from .models import (
-    BulkDeleteIn, BulkMoveIn, CategoryIn, ImportCommitIn, OrderIds,
+    BulkDeleteIn, BulkMoveIn, CategoryIn, ExportIn, ImportCommitIn, OrderIds,
     StoryCreate, StoryOrder, StoryUpdate,
 )
 
@@ -111,6 +111,18 @@ async def post_import_parse(file: UploadFile = File(...)):
 def post_import_commit(payload: ImportCommitIn):
     records = [r.model_dump() for r in payload.records]
     return _guard(db.import_commit, records)
+
+
+# ─── Export ──────────────────────────────────────────────────────────────────
+
+@router.post("/export")
+def post_export(payload: ExportIn):
+    result = _guard(exporter.export_markdown, payload.ids, payload.include_metadata)
+    single_title = None
+    if payload.ids and len(payload.ids) == 1:
+        single_title = _guard(db.get_story, payload.ids[0])["title"]
+    result["filename"] = payload.filename or exporter.default_filename(single_title)
+    return result
 
 
 # ─── Stories: collection + record ────────────────────────────────────────────

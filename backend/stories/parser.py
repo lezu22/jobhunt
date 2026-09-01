@@ -32,8 +32,8 @@ H3_RE = re.compile(r"^###\s+(?P<title>.*\S)\s*$")
 FENCE_RE = re.compile(r"^\s*(```|~~~)")
 META_RE = re.compile(r"^\s*<!--\s*ws:\s*(?P<json>\{.*\})\s*-->\s*$")
 SCORE_LINE_RE = re.compile(
-    r"^\s*(?:[-*+]\s+)?(?P<q>.+?)\s+(?:—|–|--)\s+[Ss]core:\s*(?P<score>[0-5])\s*/\s*5\s*(?:\((?P<note>.*)\))?\s*$"
-)
+    r"^\s*(?:[-*+]\s+)?(?P<q>.+?)\s+(?:—|–|--)\s+[Ss]core:\s*(?P<score>[0-5]|\?)\s*/\s*5\s*(?:\((?P<note>.*)\))?\s*$"
+)  # '?' = a mapping without a score yet (export writes this for null scores)
 LEADING_NUM_RE = re.compile(r"^\d+[.)]\s+")
 
 QUOTE_PAIRS = [('"', '"'), ("“", "”"), ("'", "'")]
@@ -74,6 +74,14 @@ def normalise_title(title: str) -> str:
     collapsed, leading list numbering stripped. Storage stays verbatim."""
     t = LEADING_NUM_RE.sub("", title.strip())
     return " ".join(t.split()).casefold()
+
+
+_ESCAPED_STRUCT_RE = re.compile(r"^\\(#{2,3}\s)")
+
+
+def _unescape_struct(lines: list[str]) -> list[str]:
+    """Undo the exporter's \\## / \\### body-line protection."""
+    return [_ESCAPED_STRUCT_RE.sub(r"\1", l) for l in lines]
 
 
 def _trim(lines: list[str]) -> list[str]:
@@ -121,7 +129,7 @@ def parse_markdown(text: str) -> dict:
         nonlocal section
         if section is None:
             return
-        body_lines = _trim(section.pop("_body_lines"))
+        body_lines = _unescape_struct(_trim(section.pop("_body_lines")))
         section["body"] = "\n".join(body_lines)
         meta = section.get("meta") or {}
         section["kind"] = meta.get("kind") or ("story" if section["mappings"] else "note")
@@ -186,7 +194,7 @@ def parse_markdown(text: str) -> dict:
             note = (m.group("note") or "").strip() or None
             section["mappings"].append({
                 "question": _strip_quotes(m.group("q")),
-                "score": int(m.group("score")),
+                "score": None if m.group("score") == "?" else int(m.group("score")),
                 "note": note,
             })
             score_lines += 1
@@ -223,7 +231,7 @@ def parse_markdown(text: str) -> dict:
                 if m:
                     note = (m.group("note") or "").strip() or None
                     mappings.append({"question": _strip_quotes(m.group("q")),
-                                     "score": int(m.group("score")), "note": note})
+                                     "score": None if m.group("score") == "?" else int(m.group("score")), "note": note})
                     score_lines += 1
                     continue
             body_lines.append(line)
@@ -231,7 +239,7 @@ def parse_markdown(text: str) -> dict:
         records.append({
             "category": name,
             "title": name,
-            "body": "\n".join(_trim(body_lines)),
+            "body": "\n".join(_unescape_struct(_trim(body_lines))),
             "mappings": mappings,
             "meta": meta or None,
             "kind": meta.get("kind") or ("story" if mappings else "note"),

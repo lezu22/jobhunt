@@ -72,7 +72,11 @@ export default function StoriesImport() {
       res.categories.forEach(c => {
         cr[c.name] = c.match
           ? { action: 'map', target: String(c.match.id), newName: c.name }
-          : { action: 'create', target: '', newName: c.name }
+          : c.name.toLowerCase() === 'uncategorised'
+            // our own export writes "## Uncategorised": map it straight back
+            // to the synthetic bucket so round trips need no manual step
+            ? { action: 'map', target: '', newName: c.name }
+            : { action: 'create', target: '', newName: c.name }
       })
       setCatRes(cr)
       setRecords(res.records.map((r, i) => {
