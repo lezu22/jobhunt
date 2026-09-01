@@ -32,7 +32,7 @@ export function scoreRangeText(story) {
     : `${story.score_min}–${story.score_max}/5`
 }
 
-export default function StoryCard({ story, jobsById, onMoveUp, onMoveDown }) {
+export default function StoryCard({ story, jobsById, onMoveUp, onMoveDown, selected, onSelect }) {
   const [expanded, setExpanded] = useState(false)
   const kind = KIND_STYLE[story.kind] || KIND_STYLE.story
   const status = STATUS_STYLE[story.status] || STATUS_STYLE.draft
@@ -51,6 +51,17 @@ export default function StoryCard({ story, jobsById, onMoveUp, onMoveDown }) {
           padding: '10px 14px', cursor: 'pointer', userSelect: 'none',
         }}
       >
+        {onSelect && (
+          <span onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', margin: '-10px 0 -10px -4px', padding: '10px 2px 10px 4px' }}>
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={e => onSelect(e.target.checked)}
+              title="Select for bulk actions"
+              style={{ accentColor: 'var(--accent2)', width: 14, height: 14, cursor: 'pointer' }}
+            />
+          </span>
+        )}
         {/* Whole zone swallows clicks so a near-miss never expands the card */}
         <div style={{ display: 'flex', flexDirection: 'column', margin: '-10px 0 -10px -8px', flexShrink: 0 }}
              onClick={e => e.stopPropagation()}>

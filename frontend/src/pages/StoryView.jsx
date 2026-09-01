@@ -40,6 +40,7 @@ export default function StoryView() {
   const [jobs, setJobs] = useState([])
   const [toast, setToast] = useState(null)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [saving, setSaving] = useState(false)
   const editing = draft !== null
 
@@ -187,6 +188,7 @@ export default function StoryView() {
             {story.has_previous && (
               <Btn variant="ghost" size="sm" onClick={revert}>↩ revert to previous save</Btn>
             )}
+            <Btn variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>Delete…</Btn>
             <Btn onClick={startEdit}>Edit</Btn>
           </>
         )}
@@ -281,6 +283,33 @@ export default function StoryView() {
           </>
         )}
       </div>
+
+      <Modal
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        title={<span style={{ color: 'var(--danger)' }}>⚠ Delete "{story.title}"?</span>}
+        width={480}
+      >
+        <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 18, lineHeight: 1.6 }}>
+          Hard delete — no recycle bin, no undo. Removed with this {story.kind}:{' '}
+          <b>{story.mappings.length}</b> question mapping{story.mappings.length === 1 ? '' : 's'},{' '}
+          <b>{story.labels.length}</b> label link{story.labels.length === 1 ? '' : 's'} and{' '}
+          <b>{story.job_ids.length}</b> job link{story.job_ids.length === 1 ? '' : 's'}.
+          The labels and tracked jobs themselves are untouched.
+        </div>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <Btn variant="secondary" onClick={() => setConfirmDelete(false)}>Cancel</Btn>
+          <Btn variant="danger" onClick={async () => {
+            try {
+              await api.deleteStory(id)
+              navigate('/stories')
+            } catch (e) {
+              setConfirmDelete(false)
+              setToast({ type: 'error', message: `Delete failed: ${e.message}` })
+            }
+          }}>Delete permanently</Btn>
+        </div>
+      </Modal>
 
       <Modal open={confirmDiscard} onClose={() => setConfirmDiscard(false)} title="Discard unsaved changes?" width={460}>
         <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 18, lineHeight: 1.6 }}>
