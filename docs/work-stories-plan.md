@@ -173,7 +173,7 @@ re-runs the full backend suite, not just its own tests.
 | 6 | `stories-import` | parser (H2 category, H3 title, `— Score: N/5` lifting, everything else verbatim incl. Caution lines, metadata-comment strip), upload validation (ext + UTF-8 + 2MB, retry flow), staged review screen: category resolution (create-new / map-to-existing), kind selection (no-mappings ⇒ note default), title edit, merge/split, per-record category, duplicate flagging (id ⇒ update default, title ⇒ create-new default, or skip), counts report | 2 (UI: 4) | import `story-bank.md`, verify counts + Caution lines in bodies; import twice, verify dup flow | import your real `story-bank.md`, check the staged review reads right (counts, categories, note defaults) before committing it; reply "go ahead with step 7" | merged (approved 2026-09-01 incl. cross-cat/body-similarity signals, 80% floor, side-by-side compare, bulk rules) |
 | 7 | `stories-export` | single + combined export: categories as `##` in user order (uncategorised last, empty categories skipped), titles as `###`, mappings back to `— Score: N/5` form, metadata HTML comment under each `###` (checkbox: default ON full export, OFF selection); export dialog shows the default filename in an editable field for confirm/change before download (Q3); round-trip tests | 6 | export-all → re-import → no drift, metadata stripped not duplicated; metadata-off round trip loses only meta fields | export your imported bank, diff it against the original by eye, confirm the filename edit field; reply "go ahead with step 8" | merged (approved 2026-09-01) |
 | 8 | `stories-search` | search mechanism per Q1 decision (FTS5 confirmed), index title/body/question with question weighted highest, ranking = relevance, ties by score desc, question-matches above body-only; result rows show matching question + score; index filters (category/label/job/status/kind) + sorts + job-link UI | 2, 3 | "pushed back" finds the "push back on scope" story; no-result query behaves | search your own bank with real interviewer phrasings, judge the <10s find target and result ordering; reply "ready for final merge" or list misses | verified by Lucas 2026-09-01 (search behaviour approved), merging |
-| 9 | final merge | dedicated commit deleting this doc, then merge `feat/work-stories` → `main` | 1–8 | full verification pass (below) done and reported | read the verification report, approve the merge to main explicitly | not started |
+| 9 | final merge | dedicated commit deleting this doc, then merge `feat/work-stories` → `main` | 1–8 | full verification pass (below) done and reported | read the verification report, approve the merge to main explicitly | verification executed 2026-09-01 — 29/29 automated checks passed (real doc, scratch DB, app HTTP layer) + UI items verified in-step; awaiting merge approval |
 
 ## Verification pass (before final merge)
 
@@ -187,6 +187,21 @@ whitespace bodies, very long lines, uncategorised records; script-tag and
 event-handler markdown; non-UTF-8, wrong-type and oversized files; search
 misses and the stemmed "pushed back" hit. Results reported per item, including
 anything that could not be executed.
+
+**Executed 2026-09-01 (final pass, feat/work-stories @ post-#14): 29/29
+automated checks passed** — import counts (26/58) & note defaults, category
+resolution both ways (case-insensitive match exercised), caution lines,
+double-import flagging with update/create/skip, reorder-then-export,
+metadata round trip (byte-identical, comment never duplicated), metadata-off
+round trip, search acceptance case + no-results, empty/whitespace/60k-char
+single-line bodies, uncategorised records, XSS bodies stored verbatim,
+category/story/job deletion interactions, bulk-delete rollback + partial,
+wrong-type/binary/oversized uploads. UI-only items verified in their build
+steps' in-browser passes: draft-buffer semantics incl. refresh survival and
+chip-vs-body boundary (step 4), red-vs-green dialog distinctness and
+per-row-checkbox bulk dialog (steps 5/7), rendered-markdown inertness of
+script/onerror content (step 3), search/filter/picker UX (steps 8+). Full
+backend suite 104 passed; frontend build clean.
 
 ## Decisions
 
