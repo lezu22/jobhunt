@@ -1,4 +1,5 @@
 // Shared UI components
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 export function Btn({ children, variant = 'primary', size = 'md', onClick, disabled, style = {} }) {
@@ -187,10 +188,23 @@ export function Modal({ open, onClose, title, children, width = 560 }) {
   )
 }
 
-export function Toast({ message, type = 'success', onClose }) {
+export function Toast({ message, type = 'success', onClose, sticky }) {
   const color = type === 'error' ? 'var(--danger)' : type === 'warn' ? 'var(--accent3)' : 'var(--accent)'
+  // Informational toasts hold 3s then fade over 2s; errors stay until
+  // dismissed so a failure can't slip by unnoticed. ✕ always closes instantly.
+  const stay = sticky ?? (type === 'error')
+  const [fading, setFading] = useState(false)
+  useEffect(() => {
+    setFading(false)
+    if (stay) return
+    const hold = setTimeout(() => setFading(true), 3000)
+    const gone = setTimeout(onClose, 5000)
+    return () => { clearTimeout(hold); clearTimeout(gone) }
+  }, [message, type, stay])
   return (
     <div style={{
+      opacity: fading ? 0 : 1,
+      transition: 'opacity 2s ease',
       position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
       background: 'var(--surface)', border: `1px solid ${color}`,
       borderRadius: 8, padding: '12px 18px',
