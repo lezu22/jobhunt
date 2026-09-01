@@ -146,6 +146,39 @@ class TestImportEndpoints:
         assert tracer["dup_title_matches"][0]["story_id"] == existing  # "1. " numbering ignored
         assert tracer["dup_id_match"] is None
 
+    def test_stage_reports_cross_category_title_and_body_similarity(self, client):
+        cid = client.post("/api/stories/categories", json={"name": "Elsewhere"}).json()["id"]
+        # same normalised title but in a DIFFERENT category than the file's H2
+        other = client.post("/api/stories", json={
+            "title": "Tracer AGV second platform", "category_id": cid,
+            "body": "Leading a project to give QA a second testing platform.",
+        }).json()["story"]["id"]
+        # no title overlap, but body text heavily shared with the fixture's first record
+        similar = client.post("/api/stories", json={
+            "title": "Completely different name",
+            "body": "Leading a project to give QA a second testing platform.",
+        }).json()["story"]["id"]
+        p = self.upload(client).json()
+        tracer = p["records"][0]
+        # cross-category title match is reported with its category and a similarity score
+        assert [m["story_id"] for m in tracer["dup_title_matches"]] == [other]
+        assert tracer["dup_title_matches"][0]["category_id"] == cid
+        assert tracer["dup_title_matches"][0]["similarity"] > 0
+        # body similarity surfaces the same-text record even with a different title
+        assert similar in [m["story_id"] for m in tracer["body_matches"]]
+        top = next(m for m in tracer["body_matches"] if m["story_id"] == similar)
+        assert top["similarity"] >= 0.35
+        # an unrelated record reports no body matches
+        intro = next(r for r in p["records"] if r["title"] == "Opening framing")
+        assert intro["body_matches"] == []
+
+    def test_shingle_similarity_bounds(self):
+        from stories.parser import shingles, similarity
+        a = shingles("Led the Tracer AGV project end to end with QA")
+        assert similarity(a, a) == 1.0
+        assert similarity(a, shingles("Completely unrelated body about power budgets")) == 0.0
+        assert similarity(a, shingles("")) == 0.0
+
     def test_commit_create_update_skip_in_one_transaction(self, client):
         target = make_story(client, title="Old title")["story"]["id"]
         recs = [

@@ -47,6 +47,28 @@ def _strip_quotes(q: str) -> str:
     return q
 
 
+_WORD_RE = re.compile(r"\w+")
+
+
+def shingles(text: str, k: int = 3) -> frozenset:
+    """Word k-shingles for body-similarity scoring."""
+    words = _WORD_RE.findall(text.lower())
+    if not words:
+        return frozenset()
+    if len(words) < k:
+        return frozenset([tuple(words)])
+    return frozenset(tuple(words[i:i + k]) for i in range(len(words) - k + 1))
+
+
+def similarity(a: frozenset, b: frozenset) -> float:
+    """Overlap coefficient: 1.0 when the smaller text is contained in the
+    larger. Chosen over Jaccard so a short imported note still scores high
+    against a longer existing story that contains the same prose."""
+    if not a or not b:
+        return 0.0
+    return len(a & b) / min(len(a), len(b))
+
+
 def normalise_title(title: str) -> str:
     """D5: comparison form for duplicate detection — case-folded, whitespace
     collapsed, leading list numbering stripped. Storage stays verbatim."""

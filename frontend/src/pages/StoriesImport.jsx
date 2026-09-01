@@ -76,7 +76,9 @@ export default function StoriesImport() {
         meta: r.meta,
         dupId: r.dup_id_match,
         dupTitles: r.dup_title_matches,
+        bodyMatches: r.body_matches || [],
         dupChoice: r.dup_id_match ? 'update' : 'create',
+        updateTarget: '',
         bodyOpen: false,
       })))
     } catch (err) {
@@ -114,6 +116,25 @@ export default function StoriesImport() {
   const titleDupFor = (r, cat) => r.dupTitles.find(d =>
     typeof cat === 'number' ? d.category_id === cat : cat === null ? d.category_id === null : false)
 
+  const catName = (id) => id == null ? 'Uncategorised' : (categories.find(c => c.id === id)?.name ?? `category ${id}`)
+  const pct = (s) => `${Math.round(s * 100)}%`
+
+  // Every existing record this candidate could plausibly update, best first:
+  // id match, same-category title match, cross-category title matches, then
+  // body-similar records. Deduped by story id.
+  const updateCandidates = (r, cat) => {
+    const sameCat = titleDupFor(r, cat)
+    const list = []
+    if (r.dupId) list.push({ id: r.dupId.story_id, label: `id match: “${r.dupId.title}”` })
+    if (sameCat) list.push({ id: sameCat.story_id, label: `same title, same category: “${sameCat.title}” (body ${pct(sameCat.similarity)} similar)` })
+    r.dupTitles.filter(d => d !== sameCat).forEach(d =>
+      list.push({ id: d.story_id, label: `same title in ${catName(d.category_id)}: “${d.title}” (body ${pct(d.similarity)} similar)` }))
+    r.bodyMatches.forEach(b =>
+      list.push({ id: b.story_id, label: `body ${pct(b.similarity)} similar: “${b.title}” (${catName(b.category_id)})` }))
+    const seen = new Set()
+    return list.filter(x => !seen.has(x.id) && seen.add(x.id))
+  }
+
   // What category does a record actually end up in? (id | null | {create: name})
   const resolveCat = (r) => {
     if (r.catChoice === NO_CAT) return null
@@ -134,7 +155,9 @@ export default function StoriesImport() {
       const payload = activeRecords.map(r => {
         const cat = resolveCat(r)
         const meta = r.meta || {}
-        const updateTarget = r.dupId?.story_id ?? titleDupFor(r, cat)?.story_id ?? null
+        const cands = updateCandidates(r, cat)
+        const updateTarget = (r.updateTarget && cands.some(c => c.id === r.updateTarget))
+          ? r.updateTarget : (cands[0]?.id ?? null)
         return {
           action: r.dupChoice === 'skip' ? 'skip'
             : (r.dupChoice === 'update' && updateTarget) ? 'update' : 'create',
@@ -299,6 +322,13 @@ export default function StoriesImport() {
           const cat = resolveCat(r)
           const titleDup = titleDupFor(r, cat)
           const flagged = r.dupId || titleDup
+          const softSignals = [
+            ...r.dupTitles.filter(d => d !== titleDup).map(d =>
+              `same title exists in ${catName(d.category_id)} (body ${pct(d.similarity)} similar)`),
+            ...r.bodyMatches.map(b =>
+              `body ${pct(b.similarity)} similar to “${b.title}” (${catName(b.category_id)})`),
+          ]
+          const cands = updateCandidates(r, cat)
           return (
             <div key={r.key} style={{
               border: `1px solid ${r.drop ? 'var(--border)' : flagged ? 'var(--accent3)' : 'var(--border2)'}`,
@@ -329,16 +359,45 @@ export default function StoriesImport() {
                 </span>
               </div>
 
-              {flagged && !r.drop && (
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 8, fontSize: 11, color: 'var(--accent3)', flexWrap: 'wrap' }}>
-                  ⚠ {r.dupId
-                    ? <>metadata id matches existing “{r.dupId.title}”</>
-                    : <>title matches existing “{titleDup.title}” in the same category</>}
-                  <select value={r.dupChoice} onChange={e => upd(r.key, { dupChoice: e.target.value })} style={{ ...inputStyle, padding: '4px 8px' }}>
-                    <option value="update">update the existing record</option>
-                    <option value="create">create as new</option>
-                    <option value="skip">skip this record</option>
-                  </select>
+              {(flagged || softSignals.length > 0) && !r.drop && (
+                <div style={{ marginTop: 8, fontSize: 11, lineHeight: 1.7 }}>
+                  {flagged && (
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', color: 'var(--accent3)', flexWrap: 'wrap' }}>
+                      ⚠ {r.dupId
+                        ? <>metadata id matches existing “{r.dupId.title}”</>
+                        : <>title matches existing “{titleDup.title}” in the same category (body {pct(titleDup.similarity)} similar)</>}
+                      <select value={r.dupChoice} onChange={e => upd(r.key, { dupChoice: e.target.value })} style={{ ...inputStyle, padding: '4px 8px' }}>
+                        <option value="update">update the existing record</option>
+                        <option value="create">create as new</option>
+                        <option value="skip">skip this record</option>
+                      </select>
+                    </div>
+                  )}
+                  {softSignals.map((s, i) => (
+                    <div key={i} style={{ color: '#a78bfa' }}>◎ {s}</div>
+                  ))}
+                  {!flagged && softSignals.length > 0 && (
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', color: 'var(--text2)', flexWrap: 'wrap' }}>
+                      possible duplicate —
+                      <select value={r.dupChoice} onChange={e => upd(r.key, { dupChoice: e.target.value })} style={{ ...inputStyle, padding: '4px 8px' }}>
+                        <option value="create">create as new (default)</option>
+                        <option value="update">update an existing record…</option>
+                        <option value="skip">skip this record</option>
+                      </select>
+                    </div>
+                  )}
+                  {r.dupChoice === 'update' && cands.length > 1 && (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, color: 'var(--text2)' }}>
+                      target:
+                      <select
+                        value={r.updateTarget && cands.some(c => c.id === r.updateTarget) ? r.updateTarget : cands[0].id}
+                        onChange={e => upd(r.key, { updateTarget: e.target.value })}
+                        style={{ ...inputStyle, padding: '4px 8px', maxWidth: 480 }}
+                      >
+                        {cands.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                      </select>
+                    </div>
+                  )}
                 </div>
               )}
 

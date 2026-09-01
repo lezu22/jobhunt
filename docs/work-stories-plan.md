@@ -292,12 +292,18 @@ anything that could not be executed.
   as unmatched on the review screen (never silently dropped, never
   importable as a record). Fenced code blocks are opaque to the parser —
   headings/score-lines inside them stay body text.
-- **D23** (step 6) Title-duplicate flags are category-scoped and live: a
-  flag appears only when the record's *resolved* category equals the
-  match's category, recomputed as resolutions change. Title-only matches
-  offer update/create/skip too (defaulting to create-new; id matches
-  default to update, per spec). Import commit is one transaction; job links
-  referencing since-deleted jobs are dropped and counted, and orphan labels
+- **D23** (step 6, extended on review) Duplicate signals on the review
+  screen, strongest first: (1) metadata-id match and same-title-in-resolved-
+  category are the strong ⚠ flag (live, recomputed as category resolutions
+  change); (2) same title in a *different* category shows as a softer ◎
+  indicator naming that category; (3) **body-text similarity** — word-shingle
+  overlap coefficient (stdlib, containment-friendly so a short note scores
+  100% against a longer story holding the same prose) — reported as a
+  percentage against the top 3 existing records ≥ 35%. Any signal enables
+  update/create/skip (create default unless id match), and when several
+  records could be the update target an explicit labelled target picker
+  chooses between them. Import commit is one transaction; job links
+  referencing since-deleted jobs are dropped and counted, orphan labels
   pruned.
 
 ## Future work (agreed out of current scope, schema kept safe for it)

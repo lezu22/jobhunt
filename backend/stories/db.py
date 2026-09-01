@@ -465,10 +465,15 @@ def bulk_move(ids: list[str], category_id) -> int:
 
 # ─── Import ──────────────────────────────────────────────────────────────────
 
+BODY_SIM_THRESHOLD = 0.35  # report body matches at/above this Jaccard score
+BODY_SIM_TOP = 3
+
+
 def stage_import(parsed: dict) -> dict:
     """Enrich parser output with read-only duplicate/category matches from the
-    DB. Commits nothing."""
-    from .parser import normalise_title
+    DB — exact-id matches, normalised-title matches (all categories, the UI
+    scopes the strong flag), and body-text similarity. Commits nothing."""
+    from .parser import normalise_title, shingles, similarity
     with _connect() as conn:
         cat_info = []
         for name in parsed["categories"]:
@@ -482,21 +487,36 @@ def stage_import(parsed: dict) -> dict:
             })
         parsed["categories"] = cat_info
 
-        existing = conn.execute("SELECT id, title, category_id FROM stories").fetchall()
+        existing = conn.execute("SELECT id, title, category_id, body FROM stories").fetchall()
         by_norm: dict[str, list] = {}
         by_id = {r["id"]: r for r in existing}
+        body_sh = {r["id"]: shingles(r["body"]) for r in existing}
         for r in existing:
             by_norm.setdefault(normalise_title(r["title"]), []).append(r)
         for rec in parsed["records"]:
+            rec_sh = shingles(rec["body"])
+            sim = lambda sid: round(similarity(rec_sh, body_sh[sid]), 2)
             meta_id = (rec.get("meta") or {}).get("id")
             hit = by_id.get(meta_id)
             rec["dup_id_match"] = (
-                {"story_id": hit["id"], "title": hit["title"], "category_id": hit["category_id"]}
+                {"story_id": hit["id"], "title": hit["title"],
+                 "category_id": hit["category_id"], "similarity": sim(hit["id"])}
                 if hit else None
             )
             rec["dup_title_matches"] = [
-                {"story_id": r["id"], "title": r["title"], "category_id": r["category_id"]}
+                {"story_id": r["id"], "title": r["title"],
+                 "category_id": r["category_id"], "similarity": sim(r["id"])}
                 for r in by_norm.get(normalise_title(rec["title"]), [])
+            ]
+            titled = {m["story_id"] for m in rec["dup_title_matches"]}
+            scored = sorted(
+                ((similarity(rec_sh, sh), sid) for sid, sh in body_sh.items() if sid not in titled),
+                reverse=True,
+            )
+            rec["body_matches"] = [
+                {"story_id": sid, "title": by_id[sid]["title"],
+                 "category_id": by_id[sid]["category_id"], "similarity": round(s, 2)}
+                for s, sid in scored[:BODY_SIM_TOP] if s >= BODY_SIM_THRESHOLD
             ]
     return parsed
 
