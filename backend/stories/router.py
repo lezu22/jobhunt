@@ -5,12 +5,15 @@ Static paths (categories, labels, order, bulk-delete) are declared before the
 /{story_id} routes so they can't be swallowed by the dynamic segment.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from . import db
+from . import db, parser
 from .models import (
-    BulkDeleteIn, BulkMoveIn, CategoryIn, OrderIds, StoryCreate, StoryOrder, StoryUpdate,
+    BulkDeleteIn, BulkMoveIn, CategoryIn, ImportCommitIn, OrderIds,
+    StoryCreate, StoryOrder, StoryUpdate,
 )
+
+IMPORT_MAX_BYTES = 2 * 1024 * 1024
 
 router = APIRouter(prefix="/api/stories", tags=["stories"])
 
@@ -80,6 +83,34 @@ def post_bulk_delete(payload: BulkDeleteIn):
 def post_bulk_move(payload: BulkMoveIn):
     moved = _guard(db.bulk_move, payload.ids, payload.category_id)
     return {"moved": moved}
+
+
+# ─── Import ──────────────────────────────────────────────────────────────────
+
+@router.post("/import/parse")
+async def post_import_parse(file: UploadFile = File(...)):
+    """Parse an uploaded .md/.txt into staged candidates. Commits nothing."""
+    name = file.filename or ""
+    if not name.lower().endswith((".md", ".txt")):
+        raise HTTPException(400, "Only .md or .txt files can be imported.")
+    data = await file.read()
+    if len(data) > IMPORT_MAX_BYTES:
+        raise HTTPException(400, f"File is {len(data) // 1024} KB — the limit is 2 MB.")
+    try:
+        text = data.decode("utf-8-sig")  # UTF-8, tolerating a BOM
+    except UnicodeDecodeError:
+        raise HTTPException(
+            400,
+            "File is not valid UTF-8 text — a renamed binary or a different"
+            " text encoding. Re-save it as UTF-8 and try again.",
+        )
+    return db.stage_import(parser.parse_markdown(text))
+
+
+@router.post("/import/commit")
+def post_import_commit(payload: ImportCommitIn):
+    records = [r.model_dump() for r in payload.records]
+    return _guard(db.import_commit, records)
 
 
 # ─── Stories: collection + record ────────────────────────────────────────────

@@ -64,4 +64,12 @@ export const api = {
   bulkMoveStories: (ids, categoryId) => req('POST', '/stories/bulk-move', { ids, category_id: categoryId }),
   reorderStories:  (categoryId, ids) => req('PUT', '/stories/order', { category_id: categoryId, ids }),
   getStoryLabels:  ()            => req('GET',    '/stories/labels'),
+  importParse: async (file) => {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch(`${BASE}/stories/import/parse`, { method: 'POST', body: form })
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
+    return res.json()
+  },
+  importCommit: (records) => req('POST', '/stories/import/commit', { records }),
 }
