@@ -5,6 +5,7 @@ Raw sqlite3 in the same style as database.py. Every connection enables
 foreign_keys so the schema's ON DELETE rules actually fire.
 """
 
+import re
 import sqlite3
 import uuid
 from datetime import datetime
@@ -461,6 +462,78 @@ def bulk_move(ids: list[str], category_id) -> int:
         raise
     finally:
         conn.close()
+
+
+# ─── Search ──────────────────────────────────────────────────────────────────
+
+# bm25 column weights (title, body, question): question text highest per spec,
+# title above body. bm25 is a cost (lower = more relevant).
+SEARCH_WEIGHTS = (4.0, 1.0, 8.0)
+
+
+def search_stories(q: str) -> list[dict]:
+    """Stemmed token search over titles, bodies and question text.
+
+    Ranking: question-matching stories above body/title-only ones, then text
+    relevance (bm25), ties broken by mapping score descending. Each result
+    carries the specific best-matching question + score, or a body snippet.
+    """
+    tokens = re.findall(r"[A-Za-z0-9_]+", q)
+    if not tokens:
+        return []
+    # implicit AND; prefix-match the final token so partial words work mid-typing
+    if len(tokens[-1]) >= 2:
+        tokens[-1] += "*"
+    match = " ".join(tokens)
+    with _connect() as conn:
+        try:
+            rows = conn.execute(
+                "SELECT story_id, mapping_id,"
+                f" bm25(story_search, {SEARCH_WEIGHTS[0]}, {SEARCH_WEIGHTS[1]}, {SEARCH_WEIGHTS[2]}) AS rank,"
+                " snippet(story_search, 1, '', '', '…', 14) AS snip"
+                " FROM story_search WHERE story_search MATCH ?"
+                " ORDER BY rank",
+                (match,),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []  # degenerate MATCH input
+        best_question: dict[str, dict] = {}  # story_id -> best question row
+        best_any: dict[str, dict] = {}       # story_id -> best row overall
+        for r in rows:
+            sid = r["story_id"]
+            if sid not in best_any:
+                best_any[sid] = dict(r)
+            if r["mapping_id"] is not None and sid not in best_question:
+                best_question[sid] = dict(r)
+        results = []
+        for sid, info in best_any.items():
+            story = _full_story(conn, sid)
+            qrow = best_question.get(sid)
+            m = None
+            if qrow is not None:
+                m = next((mm for mm in story["mappings"] if mm["id"] == qrow["mapping_id"]), None)
+            story["match"] = {
+                "type": "question" if m else "content",
+                "question": m["question"] if m else None,
+                "score": m["score"] if m else None,
+                "note": m.get("note") if m else None,
+                "snippet": None if m else info["snip"],
+                "rank": info["rank"],
+            }
+            results.append(story)
+    # D25: every story whose QUESTION matched the query counts as a relevance
+    # tie — bm25 deltas between short question texts are length noise, and the
+    # curated score exists precisely to pick the best option live. So question
+    # matches order by score desc (bm25 only breaks equal scores), and
+    # body/title-only matches follow, ordered by bm25.
+    def key(s):
+        m = s["match"]
+        if m["type"] == "question":
+            return (0, -(m["score"] if m["score"] is not None else -1), m["rank"])
+        return (1, 0, m["rank"])
+
+    results.sort(key=key)
+    return results
 
 
 # ─── Import ──────────────────────────────────────────────────────────────────

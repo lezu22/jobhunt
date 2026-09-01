@@ -65,6 +65,13 @@ def get_labels():
     return db.list_labels()
 
 
+# ─── Search ──────────────────────────────────────────────────────────────────
+
+@router.get("/search")
+def get_search(q: str = ""):
+    return db.search_stories(q)
+
+
 # ─── Stories: static paths ───────────────────────────────────────────────────
 
 @router.put("/order")
