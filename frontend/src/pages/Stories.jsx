@@ -6,7 +6,19 @@ import StoryCard from '../components/stories/StoryCard.jsx'
 
 const UNCAT = 'none' // synthetic bucket id for category_id === null
 
+// Same layout grammar as StoryCard: reorder ▲▼ column on the LEFT (bigger
+// here, same colours/hover), expand/collapse chevron on the far RIGHT.
 function CategoryHeader({ name, count, collapsed, onToggle, onMoveUp, onMoveDown }) {
+  const arrow = (enabled, glyph, title, onClick, padding) => (
+    <span onClick={onClick} title={title}
+          style={{
+            cursor: enabled ? 'pointer' : 'default', opacity: enabled ? 0.7 : 0.15,
+            fontSize: 13, lineHeight: 1, fontFamily: 'var(--mono)',
+            padding, borderRadius: 4, userSelect: 'none',
+          }}
+          onMouseEnter={e => { if (enabled) e.target.style.background = 'var(--surface3)' }}
+          onMouseLeave={e => e.target.style.background = 'transparent'}>{glyph}</span>
+  )
   return (
     <div
       onClick={onToggle}
@@ -16,9 +28,11 @@ function CategoryHeader({ name, count, collapsed, onToggle, onMoveUp, onMoveDown
         borderBottom: '1px solid var(--border2)', marginBottom: 10,
       }}
     >
-      <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--accent)' }}>
-        {collapsed ? '▸' : '▾'}
-      </span>
+      <div style={{ display: 'flex', flexDirection: 'column', margin: '-10px 0 -10px -4px', flexShrink: 0, visibility: (onMoveUp || onMoveDown) ? 'visible' : 'hidden' }}
+           onClick={e => e.stopPropagation()}>
+        {arrow(!!onMoveUp, '▲', 'Move category up', onMoveUp, '8px 9px 4px')}
+        {arrow(!!onMoveDown, '▼', 'Move category down', onMoveDown, '4px 9px 8px')}
+      </div>
       <span style={{
         fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 700,
         letterSpacing: '0.1em', textTransform: 'uppercase',
@@ -28,19 +42,9 @@ function CategoryHeader({ name, count, collapsed, onToggle, onMoveUp, onMoveDown
       <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>
         {count} {count === 1 ? 'entry' : 'entries'}
       </span>
-      {(onMoveUp || onMoveDown) && (
-        <span style={{ marginLeft: 'auto', display: 'flex', margin: '-10px 0' }}
-              onClick={e => e.stopPropagation()}>
-          <span onClick={onMoveUp} title="Move category up"
-                style={{ cursor: onMoveUp ? 'pointer' : 'default', opacity: onMoveUp ? 0.7 : 0.15, fontFamily: 'var(--mono)', fontSize: 13, padding: '9px 10px', borderRadius: 4, userSelect: 'none' }}
-                onMouseEnter={e => { if (onMoveUp) e.target.style.background = 'var(--surface3)' }}
-                onMouseLeave={e => e.target.style.background = 'transparent'}>▲</span>
-          <span onClick={onMoveDown} title="Move category down"
-                style={{ cursor: onMoveDown ? 'pointer' : 'default', opacity: onMoveDown ? 0.7 : 0.15, fontFamily: 'var(--mono)', fontSize: 13, padding: '9px 10px', borderRadius: 4, userSelect: 'none' }}
-                onMouseEnter={e => { if (onMoveDown) e.target.style.background = 'var(--surface3)' }}
-                onMouseLeave={e => e.target.style.background = 'transparent'}>▼</span>
-        </span>
-      )}
+      <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text3)', padding: '0 4px' }}>
+        {collapsed ? '▸' : '▾'}
+      </span>
     </div>
   )
 }
