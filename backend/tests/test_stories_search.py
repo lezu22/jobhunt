@@ -109,6 +109,20 @@ class TestQuestionList:
         uniq = next(q for q in qs if q["question"] == "Unique question?")
         assert uniq["uses"] == 1 and uniq["best_score"] is None
 
+    def test_filter_stories_by_question(self, client):
+        a = client.post("/api/stories", json={
+            "title": "A", "body": "b",
+            "mappings": [{"question": "Tell me about ownership.", "score": 5}],
+        }).json()["story"]["id"]
+        b = client.post("/api/stories", json={
+            "title": "B", "body": "b",
+            "mappings": [{"question": "tell me about OWNERSHIP.", "score": 2}],
+        }).json()["story"]["id"]
+        client.post("/api/stories", json={"title": "C", "body": "b",
+                                          "mappings": [{"question": "Other?", "score": 1}]})
+        got = client.get("/api/stories", params={"question": "Tell me about ownership."}).json()
+        assert sorted(s["id"] for s in got) == sorted([a, b])  # case-insensitive, both users of it
+
 
 class TestMigrationBackfill:
     def test_backfill_on_upgrade(self, client, tmp_path):
