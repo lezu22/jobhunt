@@ -103,7 +103,7 @@ export default function StoryCard({ story, jobsById, onMoveUp, onMoveDown }) {
             </Chip>
           )}
           <Chip bg={status.bg} color={status.color}>{status.label}</Chip>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--accent)' }}>
             {expanded ? '▾' : '▸'}
           </span>
         </span>

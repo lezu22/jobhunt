@@ -13,7 +13,7 @@ function CategoryHeader({ name, count, collapsed, onToggle, onMoveUp, onMoveDown
     <span onClick={onClick} title={title}
           style={{
             cursor: enabled ? 'pointer' : 'default', opacity: enabled ? 0.7 : 0.15,
-            fontSize: 13, lineHeight: 1, fontFamily: 'var(--mono)',
+            fontSize: 15, lineHeight: 1, fontFamily: 'var(--mono)',
             padding, borderRadius: 4, userSelect: 'none',
           }}
           onMouseEnter={e => { if (enabled) e.target.style.background = 'var(--surface3)' }}
@@ -42,7 +42,7 @@ function CategoryHeader({ name, count, collapsed, onToggle, onMoveUp, onMoveDown
       <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>
         {count} {count === 1 ? 'entry' : 'entries'}
       </span>
-      <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text3)', padding: '0 4px' }}>
+      <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 14, color: 'var(--accent)', padding: '0 4px' }}>
         {collapsed ? '▸' : '▾'}
       </span>
     </div>
