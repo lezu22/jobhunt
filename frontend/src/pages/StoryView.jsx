@@ -39,6 +39,7 @@ export default function StoryView() {
   const [restored, setRestored] = useState(false)
   const [categories, setCategories] = useState([])
   const [jobs, setJobs] = useState([])
+  const [knownQuestions, setKnownQuestions] = useState([])
   const [toast, setToast] = useState(null)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -49,6 +50,7 @@ export default function StoryView() {
   useEffect(() => {
     api.getStoryCategories().then(setCategories).catch(() => {})
     api.getTracker().then(setJobs).catch(() => {})
+    api.getKnownQuestions().then(setKnownQuestions).catch(() => {})
     const existing = loadDraft(isNew ? 'new' : id)
     if (isNew) {
       const meta = NEW_DEFAULTS(search.get('kind') === 'note' ? 'note' : 'story')
@@ -245,6 +247,7 @@ export default function StoryView() {
                 <MappingsEditor
                   mappings={draft.mappings}
                   onChange={ms => setDraft(d => ({ ...d, mappings: ms }))}
+                  knownQuestions={knownQuestions}
                 />
               </div>
             )}

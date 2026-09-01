@@ -72,6 +72,11 @@ def get_search(q: str = ""):
     return db.search_stories(q)
 
 
+@router.get("/questions")
+def get_questions():
+    return db.list_questions()
+
+
 # ─── Stories: static paths ───────────────────────────────────────────────────
 
 @router.put("/order")
@@ -137,14 +142,15 @@ def post_export(payload: ExportIn):
 @router.get("")
 def get_stories(category: str | None = None, label: str | None = None,
                 job: str | None = None, status: str | None = None,
-                kind: str | None = None, sort: str = "position"):
+                kind: str | None = None, question: str | None = None,
+                sort: str = "position"):
     if category is not None and category != "none":
         try:
             category = int(category)
         except ValueError:
             raise HTTPException(400, "category must be an id or 'none'")
     return _guard(db.list_stories, category=category, label=label, job=job,
-                  status=status, kind=kind, sort=sort)
+                  status=status, kind=kind, question=question, sort=sort)
 
 
 @router.post("", status_code=201)

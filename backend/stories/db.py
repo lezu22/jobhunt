@@ -348,7 +348,7 @@ def revert_story(sid: str) -> dict:
 
 def list_stories(category=None, label: Optional[str] = None, job: Optional[str] = None,
                  status: Optional[str] = None, kind: Optional[str] = None,
-                 sort: str = "position") -> list[dict]:
+                 question: Optional[str] = None, sort: str = "position") -> list[dict]:
     """category: None = all, 'none' = uncategorised bucket, or a category id."""
     where, params = [], []
     joins = ""
@@ -363,6 +363,9 @@ def list_stories(category=None, label: Optional[str] = None, job: Optional[str] 
     if job is not None:
         joins += " JOIN story_job_links fj ON fj.story_id = s.id"
         where.append("fj.job_id = ?"); params.append(job)
+    if question is not None:
+        joins += " JOIN question_mappings fq ON fq.story_id = s.id"
+        where.append("fq.question = ? COLLATE NOCASE"); params.append(question)
     if status is not None:
         where.append("s.status = ?"); params.append(status)
     if kind is not None:
@@ -462,6 +465,20 @@ def bulk_move(ids: list[str], category_id) -> int:
         raise
     finally:
         conn.close()
+
+
+def list_questions() -> list[dict]:
+    """Every distinct question text in the bank (case-insensitive grouping),
+    with usage count and best score — feeds the editor's autocomplete so a
+    reused question keeps identical wording (and search groups it cleanly)."""
+    with _connect() as conn:
+        rows = conn.execute("""
+            SELECT MIN(question) AS question, COUNT(*) AS uses, MAX(score) AS best_score
+            FROM question_mappings
+            GROUP BY question COLLATE NOCASE
+            ORDER BY uses DESC, question COLLATE NOCASE
+        """).fetchall()
+    return [dict(r) for r in rows]
 
 
 # ─── Search ──────────────────────────────────────────────────────────────────

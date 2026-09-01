@@ -77,7 +77,8 @@ export default function StoriesPage() {
   const [jobs, setJobs] = useState([])
   const [labels, setLabels] = useState([])
   const [jobsById, setJobsById] = useState({})
-  const [filters, setFilters] = useState({ category: '', label: '', job: '', status: '', kind: '' })
+  const [filters, setFilters] = useState({ category: '', label: '', job: '', status: '', kind: '', question: '' })
+  const [questions, setQuestions] = useState([])
   const [sort, setSort] = useState('position')
   const [query, setQuery] = useState('')
   const [results, setResults] = useState(null)  // null = search inactive
@@ -101,6 +102,7 @@ export default function StoriesPage() {
     api.getStoryCategories().then(setCategories),
     api.getStories({ ...filters, sort }).then(setStories),
     api.getStoryLabels().then(setLabels).catch(() => {}),
+    api.getKnownQuestions().then(setQuestions).catch(() => {}),
   ]).catch(e => setToast({ type: 'error', message: `Load failed: ${e.message}` }))
 
   useEffect(() => { load() }, [filters, sort])
@@ -301,13 +303,22 @@ export default function StoriesPage() {
               <option value="story">stories</option>
               <option value="note">notes</option>
             </select>
+            <select value={filters.question} onChange={e => setFilters(f => ({ ...f, question: e.target.value }))}
+                    style={{ ...filterSelStyle, maxWidth: 240 }} title="Show every story mapped to this question">
+              <option value="">any question</option>
+              {questions.map(q => (
+                <option key={q.question} value={q.question}>
+                  {q.question.length > 60 ? q.question.slice(0, 57) + '…' : q.question} ({q.uses}×)
+                </option>
+              ))}
+            </select>
             <select value={sort} onChange={e => setSort(e.target.value)} style={filterSelStyle} title="Order within each category">
               <option value="position">my order</option>
               <option value="updated">last edited</option>
               <option value="title">title A–Z</option>
             </select>
             {(Object.values(filters).some(Boolean) || sort !== 'position') && (
-              <Btn size="sm" variant="ghost" onClick={() => { setFilters({ category: '', label: '', job: '', status: '', kind: '' }); setSort('position') }}>
+              <Btn size="sm" variant="ghost" onClick={() => { setFilters({ category: '', label: '', job: '', status: '', kind: '', question: '' }); setSort('position') }}>
                 reset
               </Btn>
             )}

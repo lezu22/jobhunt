@@ -75,4 +75,5 @@ export const api = {
   exportStories: (ids, includeMetadata, filename) =>
     req('POST', '/stories/export', { ids, include_metadata: includeMetadata, filename }),
   searchStories: (q) => req('GET', `/stories/search?q=${encodeURIComponent(q)}`),
+  getKnownQuestions: () => req('GET', '/stories/questions'),
 }
