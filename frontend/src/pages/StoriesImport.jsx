@@ -75,23 +75,31 @@ export default function StoriesImport() {
           : { action: 'create', target: '', newName: c.name }
       })
       setCatRes(cr)
-      setRecords(res.records.map((r, i) => ({
-        key: i,
-        title: r.title,
-        body: r.body,
-        mappings: r.mappings,
-        h2: r.category,                 // file heading (may be null)
-        catChoice: FOLLOW,              // FOLLOW | NO_CAT | category id string
-        kind: r.kind,                   // 'story' | 'note'
-        drop: false,
-        meta: r.meta,
-        dupId: r.dup_id_match,
-        dupTitles: r.dup_title_matches,
-        bodyMatches: r.body_matches || [],
-        dupChoice: r.dup_id_match ? 'update' : 'create',
-        updateTarget: '',
-        bodyOpen: false,
-      })))
+      setRecords(res.records.map((r, i) => {
+        const bestSim = Math.max(0, r.dup_id_match?.similarity ?? 0,
+          ...r.dup_title_matches.map(d => d.similarity),
+          ...(r.body_matches || []).map(b => b.similarity))
+        return {
+          key: i,
+          title: r.title,
+          body: r.body,
+          mappings: r.mappings,
+          h2: r.category,                 // file heading (may be null)
+          catChoice: FOLLOW,              // FOLLOW | NO_CAT | category id string
+          kind: r.kind,                   // 'story' | 'note'
+          drop: false,
+          meta: r.meta,
+          dupId: r.dup_id_match,
+          dupTitles: r.dup_title_matches,
+          bodyMatches: r.body_matches || [],
+          bestSim,
+          // defaults: id match → update (identity beats similarity);
+          // ≥80% body-similar → skip (near-duplicate); otherwise create
+          dupChoice: r.dup_id_match ? 'update' : bestSim >= 0.8 ? 'skip' : 'create',
+          updateTarget: '',
+          bodyOpen: false,
+        }
+      }))
     } catch (err) {
       setPickError(err.message.replace(/^\d+: /, '').replace(/.*"detail":"([^"]+)".*/, '$1'))
     } finally {
@@ -159,6 +167,37 @@ export default function StoriesImport() {
 
   const activeRecords = records.filter(r => !r.drop)
   const problems = useMemo(() => activeRecords.filter(r => !r.title.trim() || !r.body.trim()), [records])
+
+  // ── bulk-by-similarity rules ──────────────────────────────────────────────
+  // One optional rule per action; each covers similarity ≥ its threshold, the
+  // highest matching threshold wins per record. Two enabled rules on the SAME
+  // threshold are an unresolvable overlap: applying and committing are blocked.
+  const [bulkRules, setBulkRules] = useState({
+    skip: { on: false, th: 80 },
+    update: { on: false, th: 90 },
+    create: { on: false, th: 100 },
+  })
+  const enabledRules = Object.entries(bulkRules).filter(([, r]) => r.on)
+  const ruleOverlap = new Set(enabledRules.map(([, r]) => r.th)).size !== enabledRules.length
+  const ruleFor = (r) => {
+    const s = Math.round(r.bestSim * 100)
+    const hits = enabledRules.filter(([, rule]) => s >= rule.th)
+    if (!hits.length) return null
+    return hits.sort((a, b) => b[1].th - a[1].th)[0][0]
+  }
+  const bulkPreview = ruleOverlap ? [] : activeRecords.filter(r => ruleFor(r))
+  const applyBulk = () => {
+    let set = 0, noTarget = 0
+    setRecords(rs => rs.map(r => {
+      if (r.drop) return r
+      const action = ruleFor(r)
+      if (!action) return r
+      if (action === 'update' && updateCandidates(r, resolveCat(r)).length === 0) { noTarget += 1; return r }
+      set += 1
+      return { ...r, dupChoice: action }
+    }))
+    setToast({ type: 'success', message: `Applied to ${set} record(s)${noTarget ? `; ${noTarget} skipped (no update target)` : ''}.` })
+  }
 
   const commit = async () => {
     setCommitting(true)
@@ -326,6 +365,43 @@ export default function StoriesImport() {
         })}
       </div>
 
+      {/* Bulk actions by similarity */}
+      <div style={panel}>
+        <H>Bulk action by similarity</H>
+        <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap', fontSize: 12 }}>
+          {['skip', 'create', 'update'].map(action => (
+            <label key={action} style={{ display: 'flex', gap: 7, alignItems: 'center', cursor: 'pointer' }}>
+              <input type="checkbox" checked={bulkRules[action].on}
+                     onChange={e => setBulkRules(br => ({ ...br, [action]: { ...br[action], on: e.target.checked } }))}
+                     style={{ accentColor: 'var(--accent2)' }} />
+              <span style={{ textTransform: 'capitalize' }}>{action}</span>
+              <span style={{ color: 'var(--text3)' }}>when ≥</span>
+              <select value={bulkRules[action].th}
+                      onChange={e => setBulkRules(br => ({ ...br, [action]: { ...br[action], th: Number(e.target.value) } }))}
+                      style={{ ...inputStyle, padding: '4px 8px' }}>
+                {[80, 85, 90, 95, 100].map(t => <option key={t} value={t}>{t}%</option>)}
+              </select>
+            </label>
+          ))}
+          <Btn size="sm" variant="secondary" onClick={applyBulk}
+               disabled={ruleOverlap || bulkPreview.length === 0}>
+            Apply to {ruleOverlap ? '—' : bulkPreview.length} record(s)
+          </Btn>
+        </div>
+        <div style={{ fontSize: 11, marginTop: 8, lineHeight: 1.6 }}>
+          {ruleOverlap ? (
+            <span style={{ color: 'var(--danger)', fontFamily: 'var(--mono)' }}>
+              ⚠ two rules share the same threshold — their ranges overlap; change one before applying or importing
+            </span>
+          ) : (
+            <span style={{ color: 'var(--text3)' }}>
+              Highest matching threshold wins per record (e.g. skip ≥95 + update ≥85 ⇒ skip covers 95–100, update covers 85–94).
+              Individual records can still be changed afterwards.
+            </span>
+          )}
+        </div>
+      </div>
+
       {/* Records */}
       <div style={panel}>
         <H>Records ({activeRecords.length} to import, {records.length - activeRecords.length} dropped)</H>
@@ -333,10 +409,13 @@ export default function StoriesImport() {
           const cat = resolveCat(r)
           const titleDup = titleDupFor(r, cat)
           const flagged = r.dupId || titleDup
+          // a title match's body-% is only an annotation: below the 80% floor
+          // it says "body differs" rather than flashing a confusing low number
+          const simNote = (s) => s >= 0.8 ? `body ${pct(s)} similar` : 'body differs'
           const softSignals = [
             ...r.dupTitles.filter(d => d !== titleDup).map(d => ({
               id: d.story_id,
-              text: `same title exists in ${catName(d.category_id)} (body ${pct(d.similarity)} similar)`,
+              text: `same title exists in ${catName(d.category_id)} (${simNote(d.similarity)})`,
             })),
             ...r.bodyMatches.map(b => ({
               id: b.story_id,
@@ -352,9 +431,10 @@ export default function StoriesImport() {
           )
           return (
             <div key={r.key} style={{
-              border: `1px solid ${r.drop ? 'var(--border)' : flagged ? 'var(--accent3)' : 'var(--border2)'}`,
+              border: `1px solid ${r.drop ? 'var(--border)' : (flagged || r.bestSim >= 0.8) ? 'var(--accent3)' : 'var(--border2)'}`,
               borderRadius: 6, padding: '10px 12px', marginBottom: 8,
-              opacity: r.drop ? 0.45 : 1, background: 'var(--surface2)',
+              opacity: r.drop ? 0.45 : 1,
+              background: !r.drop && r.bestSim >= 0.8 ? 'rgba(245,158,11,0.07)' : 'var(--surface2)',
             }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <input value={r.title} onChange={e => upd(r.key, { title: e.target.value })}
@@ -386,7 +466,7 @@ export default function StoriesImport() {
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center', color: 'var(--accent3)', flexWrap: 'wrap' }}>
                       ⚠ {r.dupId
                         ? <>metadata id matches existing “{r.dupId.title}”</>
-                        : <>title matches existing “{titleDup.title}” in the same category (body {pct(titleDup.similarity)} similar)</>}
+                        : <>title matches existing “{titleDup.title}” in the same category ({titleDup.similarity >= 0.8 ? `body ${pct(titleDup.similarity)} similar` : 'body differs'})</>}
                       {compareLink((r.dupId ?? titleDup).story_id)}
                       <select value={r.dupChoice} onChange={e => upd(r.key, { dupChoice: e.target.value })} style={{ ...inputStyle, padding: '4px 8px' }}>
                         <option value="update">update the existing record</option>
@@ -475,13 +555,18 @@ export default function StoriesImport() {
       </div>
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 40 }}>
-        <Btn onClick={commit} disabled={committing || activeRecords.length === 0 || problems.length > 0}>
+        <Btn onClick={commit} disabled={committing || activeRecords.length === 0 || problems.length > 0 || ruleOverlap}>
           {committing ? 'Importing…' : `Import ${activeRecords.filter(r => r.dupChoice !== 'skip').length} record(s)`}
         </Btn>
         <Btn variant="secondary" onClick={() => { setParsed(null); setPickError(null) }}>Start over</Btn>
         {problems.length > 0 && (
           <span style={{ ...mono, fontSize: 11, color: 'var(--danger)' }}>
             {problems.length} record(s) have an empty title or body — fix or drop them first
+          </span>
+        )}
+        {ruleOverlap && (
+          <span style={{ ...mono, fontSize: 11, color: 'var(--danger)' }}>
+            bulk rules overlap — resolve the thresholds first
           </span>
         )}
       </div>

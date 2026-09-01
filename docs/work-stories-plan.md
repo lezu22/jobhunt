@@ -299,7 +299,7 @@ anything that could not be executed.
   indicator naming that category; (3) **body-text similarity** — word-shingle
   overlap coefficient (stdlib, containment-friendly so a short note scores
   100% against a longer story holding the same prose) — reported as a
-  percentage against the top 3 existing records ≥ 80% (Lucas-set floor: high enough to be a near-duplicate, low enough to still catch an edited copy), each with an expandable side-by-side comparison of incoming vs existing body. Any signal enables
+  percentage against the top 3 existing records ≥ 80% (Lucas-set floor: high enough to be a near-duplicate, low enough to still catch an edited copy), each with an expandable side-by-side comparison of incoming vs existing body; records at ≥80% best-similarity default to SKIP and are amber-highlighted (id matches still default to update); a title match below the floor annotates as "body differs" rather than a low percentage; a bulk-by-similarity bar applies skip/create/update to records above a per-rule threshold (80–100%), highest threshold winning, with equal thresholds treated as an overlap that blocks both applying and importing until resolved. Any signal enables
   update/create/skip (create default unless id match), and when several
   records could be the update target an explicit labelled target picker
   chooses between them. Import commit is one transaction; job links
