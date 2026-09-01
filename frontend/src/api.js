@@ -72,4 +72,6 @@ export const api = {
     return res.json()
   },
   importCommit: (records) => req('POST', '/stories/import/commit', { records }),
+  exportStories: (ids, includeMetadata, filename) =>
+    req('POST', '/stories/export', { ids, include_metadata: includeMetadata, filename }),
 }

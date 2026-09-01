@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import { Btn, Input, Modal, SectionTitle, Spinner, Toast } from '../components/UI.jsx'
 import StoryCard from '../components/stories/StoryCard.jsx'
+import ExportDialog from '../components/stories/ExportDialog.jsx'
 
 const UNCAT = 'none' // synthetic bucket id for category_id === null
 
@@ -79,6 +80,8 @@ export default function StoriesPage() {
   const [catName, setCatName] = useState('')
   const [moveOpen, setMoveOpen] = useState(false)
   const [moveTarget, setMoveTarget] = useState('') // '' = uncategorised
+  const [exportSel, setExportSel] = useState(false)  // export the selection
+  const [exportAll, setExportAll] = useState(false)  // export everything
   const navigate = useNavigate()
 
   const load = () => Promise.all([
@@ -220,6 +223,7 @@ export default function StoriesPage() {
           <Btn size="sm" variant="secondary" onClick={() => navigate('/stories/new?kind=note')}>+ Note</Btn>
           <Btn size="sm" variant="ghost" onClick={() => setNewCatOpen(true)}>+ Category</Btn>
           <Btn size="sm" variant="ghost" onClick={() => navigate('/stories/import')}>⇪ Import</Btn>
+          <Btn size="sm" variant="ghost" onClick={() => setExportAll(true)} disabled={!stories?.length}>⇓ Export all</Btn>
         </span>
       </div>
       <div style={{ fontSize: 12, color: 'var(--text2)', margin: '-8px 0 24px' }}>
@@ -235,6 +239,7 @@ export default function StoriesPage() {
           <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text2)' }}>
             {selected.size} selected
           </span>
+          <Btn size="sm" onClick={() => setExportSel(true)}>⇓ Export selected…</Btn>
           <Btn size="sm" variant="secondary" onClick={() => { setMoveTarget(''); setMoveOpen(true) }}>
             Move to category…
           </Btn>
@@ -280,6 +285,24 @@ export default function StoriesPage() {
           </div>
         )
       })}
+
+      {/* Export: metadata default ON for a full export, OFF for a selection */}
+      <ExportDialog
+        open={exportSel}
+        onClose={() => setExportSel(false)}
+        ids={selectedStories.map(s => s.id)}
+        defaultMetadata={false}
+        summary={`${selectedStories.length} selected`}
+        onDone={res => setToast({ type: 'success', message: `Exported ${res.count} to ${res.filename}.` })}
+      />
+      <ExportDialog
+        open={exportAll}
+        onClose={() => setExportAll(false)}
+        ids={null}
+        defaultMetadata={true}
+        summary={`all ${stories?.length ?? 0} entries`}
+        onDone={res => setToast({ type: 'success', message: `Exported ${res.count} to ${res.filename}.` })}
+      />
 
       {/* Bulk move: neutral/accent theme — a non-destructive sibling of the
           red delete dialog below */}

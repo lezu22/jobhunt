@@ -5,6 +5,7 @@ import { Btn, Modal, Spinner, Toast } from '../components/UI.jsx'
 import Markdown from '../components/stories/Markdown.jsx'
 import MappingsEditor from '../components/stories/MappingsEditor.jsx'
 import MetaPanel from '../components/stories/MetaPanel.jsx'
+import ExportDialog from '../components/stories/ExportDialog.jsx'
 
 const draftKey = (id) => `story-draft-${id}`
 
@@ -41,6 +42,7 @@ export default function StoryView() {
   const [toast, setToast] = useState(null)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const editing = draft !== null
 
@@ -188,6 +190,7 @@ export default function StoryView() {
             {story.has_previous && (
               <Btn variant="ghost" size="sm" onClick={revert}>↩ revert to previous save</Btn>
             )}
+            <Btn variant="ghost" size="sm" onClick={() => setExportOpen(true)}>⇓ Export…</Btn>
             <Btn variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>Delete…</Btn>
             <Btn onClick={startEdit}>Edit</Btn>
           </>
@@ -283,6 +286,18 @@ export default function StoryView() {
           </>
         )}
       </div>
+
+      {!isNew && (
+        <ExportDialog
+          open={exportOpen}
+          onClose={() => setExportOpen(false)}
+          ids={[id]}
+          defaultMetadata={false}
+          summary={`"${story.title}"`}
+          singleTitle={story.title}
+          onDone={res => setToast({ type: 'success', message: `Exported to ${res.filename}.` })}
+        />
+      )}
 
       <Modal
         open={confirmDelete}
