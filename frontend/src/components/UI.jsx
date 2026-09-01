@@ -208,7 +208,7 @@ export function Toast({ message, type = 'success', onClose, sticky }) {
     <div style={{
       opacity: fading ? 0 : 1,
       transition: 'opacity 2s ease',
-      position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
+      position: 'fixed', top: 24, right: 24, zIndex: 9999,
       background: 'var(--surface)', border: `1px solid ${color}`,
       borderRadius: 8, padding: '12px 18px',
       fontFamily: 'var(--mono)', fontSize: 12, color,
