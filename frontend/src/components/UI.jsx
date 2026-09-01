@@ -201,7 +201,10 @@ export function Toast({ message, type = 'success', onClose, sticky }) {
     const gone = setTimeout(onClose, 5000)
     return () => { clearTimeout(hold); clearTimeout(gone) }
   }, [message, type, stay])
-  return (
+  // Portaled into <body> for the same reason as Modal: page content lives in
+  // its own stacking context (z-index 1), so an in-tree toast would sit under
+  // the modal overlay no matter how high its own z-index is.
+  return createPortal(
     <div style={{
       opacity: fading ? 0 : 1,
       transition: 'opacity 2s ease',
@@ -216,6 +219,7 @@ export function Toast({ message, type = 'success', onClose, sticky }) {
     }}>
       {message}
       <span onClick={onClose} style={{ cursor: 'pointer', marginLeft: 'auto', opacity: 0.6 }}>✕</span>
-    </div>
+    </div>,
+    document.body
   )
 }
