@@ -160,6 +160,27 @@ class TestDeletion:
         s = client.get(f"/api/stories/{sid}").json()
         assert s["job_ids"] == []
 
+    def test_bulk_move_to_category_and_uncategorised(self, client):
+        cid = client.post("/api/stories/categories", json={"name": "Target"}).json()["id"]
+        inside = make_story(client, title="Already inside", category_id=cid)["story"]["id"]
+        a = make_story(client, title="A")["story"]["id"]
+        b = make_story(client, title="B")["story"]["id"]
+        r = client.post("/api/stories/bulk-move", json={"ids": [a, b, inside], "category_id": cid})
+        assert r.status_code == 200 and r.json()["moved"] == 2  # 'inside' skipped
+        got = client.get("/api/stories", params={"category": cid}).json()
+        assert [s["id"] for s in got] == [inside, a, b]  # appended after existing
+        r = client.post("/api/stories/bulk-move", json={"ids": [a], "category_id": None})
+        assert r.json()["moved"] == 1
+        assert client.get(f"/api/stories/{a}").json()["category_id"] is None
+
+    def test_bulk_move_rolls_back_on_missing_story(self, client):
+        cid = client.post("/api/stories/categories", json={"name": "Target"}).json()["id"]
+        a = make_story(client, title="A")["story"]["id"]
+        r = client.post("/api/stories/bulk-move", json={"ids": [a, "ghost"], "category_id": cid})
+        assert r.status_code == 404 and "ghost" in r.json()["detail"]
+        assert client.get(f"/api/stories/{a}").json()["category_id"] is None  # rolled back
+        assert client.post("/api/stories/bulk-move", json={"ids": [a], "category_id": 999}).status_code == 400
+
     def test_bulk_delete_all_or_nothing(self, client):
         ids = [make_story(client, title=f"S{i}")["story"]["id"] for i in range(3)]
         r = client.post("/api/stories/bulk-delete", json={"ids": ids[:2] + ["missing"]})

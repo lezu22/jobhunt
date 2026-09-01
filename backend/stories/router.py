@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 
 from . import db
 from .models import (
-    BulkDeleteIn, CategoryIn, OrderIds, StoryCreate, StoryOrder, StoryUpdate,
+    BulkDeleteIn, BulkMoveIn, CategoryIn, OrderIds, StoryCreate, StoryOrder, StoryUpdate,
 )
 
 router = APIRouter(prefix="/api/stories", tags=["stories"])
@@ -74,6 +74,12 @@ def put_story_order(payload: StoryOrder):
 def post_bulk_delete(payload: BulkDeleteIn):
     deleted = _guard(db.bulk_delete, payload.ids)
     return {"deleted": deleted}
+
+
+@router.post("/bulk-move")
+def post_bulk_move(payload: BulkMoveIn):
+    moved = _guard(db.bulk_move, payload.ids, payload.category_id)
+    return {"moved": moved}
 
 
 # ─── Stories: collection + record ────────────────────────────────────────────
